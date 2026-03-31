@@ -1,0 +1,11 @@
+[package]
+name = "trade-meta-compiler"
+version = "0.1.0"
+edition = "2024"
+
+[build-dependencies]
+lalrpop = { version = "0.23.1", features = ["lexer"] }
+
+[dependencies]
+lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
+inventory = "0.3"

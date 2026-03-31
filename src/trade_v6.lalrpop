@@ -1,0 +1,387 @@
+// trade_v6.lalrpop — Trade-Lang V6.0 语法定义
+//
+// 设计原则：
+//   - 元编译器只定义语法结构，不硬编码任何业务符号
+//   - Spawn / OneOf / Done / Timeout 等都是可注册的插件符号
+//   - 通用分支调用语法：SymbolName[cond => [execs], ...]
+//   - 执行器列表中允许零参数符号（如 Done）不带括号
+
+use std::collections::HashMap;
+use crate::ast::*;
+
+grammar;
+
+// ─── Lexer ───────────────────────────────────────────────────────────────────
+
+match {
+    // 跳过空白和注释
+    r"\s+"                                  => {},
+    r"//[^\n\r]*"                           => {},
+    r"/\*([^*]|\*[^/])*\*/"                => {},
+
+    // 多字符运算符（必须先于单字符）
+    "=>",
+    "==",
+    "!=",
+    "<=",
+    ">=",
+
+    // 结构性关键字（最小集合，只保留元编译器必须的）
+    "strategy",
+    "version",
+    "description",
+    "vars",
+    "monitor",
+    "buy",
+    "sell",
+    "let",
+    "_",
+    "true",
+    "false",
+    "uninit",
+
+    // 变量类型关键字（vars 块里使用）
+    "Price",
+    "Amount",
+    "Duration",
+    "TimePoint",
+    "Percent",
+    "Count",
+    "Address",
+
+    // 单位
+    "SOL",
+    "s",
+    "h",
+
+    // 单字符运算符
+    "<",
+    ">",
+    "=",
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+
+    // 标点
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}",
+    ":",
+    ",",
+    ";",
+
+    // 字面量
+    r#""([^"\\]|\\.)*""# => StringLiteral,
+    r"[0-9]+\.?[0-9]*"   => NumberLiteral,
+
+} else {
+    // 所有业务符号（PumpBuy / Done / OneOf / Spawn / Timeout 等）
+    // 都通过 Ident 匹配，不在关键字层区分
+    r"[a-zA-Z_][a-zA-Z0-9_]*" => Ident,
+    _
+}
+
+// ─── 顶层策略 ────────────────────────────────────────────────────────────────
+
+pub Strategy: Strategy = {
+    "strategy" <name: StrVal>
+        "{"
+            <ver: VersionLine>
+            <desc: DescLine?>
+            <vars: VarsBlock>
+            <monitor: MonitorBlock>
+        "}"
+    => Strategy {
+        name,
+        metadata: StrategyMeta { version: ver, description: desc },
+        vars,
+        monitor,
+    },
+};
+
+VersionLine: String = { "version" "=" <s: StrVal> => s };
+DescLine:    String = { "description" "=" <s: StrVal> => s };
+
+// ─── Vars 块 ─────────────────────────────────────────────────────────────────
+
+VarsBlock: VarsBlock = {
+    "vars" "{" "}"                   => VarsBlock { vars: vec![] },
+    "vars" "{" <decls: VarDecl+> "}" => VarsBlock { vars: decls },
+};
+
+VarDecl: VarDecl = {
+    <name: Ident> ":" <var_type: VarType> ";" => VarDecl { name: name.to_string(), var_type },
+};
+
+VarType: VarType = {
+    "Price"     => VarType::Price,
+    "Amount"    => VarType::Amount,
+    "Duration"  => VarType::Duration,
+    "TimePoint" => VarType::TimePoint,
+    "Percent"   => VarType::Percent,
+    "Count"     => VarType::Count,
+    "Address"   => VarType::Address,
+};
+
+// ─── Monitor 块 ──────────────────────────────────────────────────────────────
+
+MonitorBlock: MonitorBlock = {
+    "monitor" ":" <call: CallExpr> "=>" "{" <body: TriggerBody> "}" => {
+        MonitorBlock {
+            monitor_call: call,
+            on_trigger:   body,
+        }
+    },
+    "monitor" ":" <name: Ident> "=>" "{" <body: TriggerBody> "}" => {
+        MonitorBlock {
+            monitor_call: CallExpr { name: SymbolRef::new(name), args: vec![] },
+            on_trigger:   body,
+        }
+    },
+};
+
+TriggerBody: TriggerBody = {
+    // 有 finally 块：buy ... sell [...] => [...]
+    "buy" ":" <buy: BuySpec> "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
+        TriggerBody { buy, sell, sell_finally: finally }
+    },
+    // 无 finally 块
+    "buy" ":" <buy: BuySpec> "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
+        TriggerBody { buy, sell, sell_finally: vec![] }
+    },
+};
+
+// ─── BuySpec ─────────────────────────────────────────────────────────────────
+
+BuySpec: BuySpec = {
+    // let (expected_price, actual_price) = expr
+    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
+        BuySpec::Destructure { targets, value: val }
+    },
+    // PumpBuy(...)
+    <call: CallExpr> => BuySpec::Direct(call),
+    // 列表模式：buy: [item1, item2, ...]
+    "[" <items: CommaList<BuyItem>> "]" => BuySpec::List(items),
+};
+
+// ─── BuyItem（buy 列表中的单个项）─────────────────────────────────────────
+
+BuyItem: BuyItem = {
+    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
+        BuyItem::Destructure { targets, value: val }
+    },
+    <call: CallExpr> => BuyItem::Direct(call),
+};
+
+// ─── CallExpr / NamedArg ─────────────────────────────────────────────────────
+
+// 普通命名参数调用：SymbolName(arg: val, ...)
+CallExpr: CallExpr = {
+    <name: Ident> "(" <args: CommaList<NamedArg>> ")" => CallExpr {
+        name: SymbolRef::new(name),
+        args,
+    },
+};
+
+NamedArg: NamedArg = {
+    <name: Ident> ":" <value: ArgValExpr> => NamedArg { name: name.to_string(), value },
+};
+
+// 参数值表达式：与普通数据表达式相同
+ArgValExpr: DataExpr = {
+    <e: Expr> => e,
+};
+
+// ─── Statement ───────────────────────────────────────────────────────────────
+
+Statement: Statement = {
+    // ── 通用分支调用：SymbolName[cond => [execs], ...] ──────────────────────
+    // OneOf / Spawn 等注册符号都用这个形式
+    <name: Ident> "[" <branches: CommaList<ExecBranch>> "]" => {
+        Statement::BranchedCall { name: name.to_string(), branches }
+    },
+
+    // ── All 组合子：All[cond1, cond2] => [execs] ─────────────────────────────
+    // 所有条件满足后执行共同的执行器列表；
+    // 条件之间没有各自的 "=>" 只有逗号，末尾 "] => [" 为语法分隔
+    <name: Ident> "[" <conds: ConditionList1> "]" "=>" "[" <execs: CommaList<ExecutorItem>> "]" => {
+        Statement::AllCall { name: name.to_string(), conditions: conds, executors: execs }
+    },
+
+    // ── let 解构赋值：let (a, b) = expr ──────────────────────────────
+    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
+        Statement::LetDestructure { targets, value: val }
+    },
+
+    // ── let 表达式赋值：let x = expr  ───────────────────────────────────────
+    // 包括 let x = Symbol(arg: val) —— CallExpr 作为 Expr 的一部分
+    "let" <name: Ident> "=" <val: Expr> => {
+        Statement::LetAssign { var_name: name.to_string(), value: val }
+    },
+
+    // ── 条件 => [执行器列表]  ────────────────────────────────────────────────
+    <cond: Condition> "=>" "[" <execs: CommaList<ExecutorItem>> "]" => {
+        Statement::ConditionExec { condition: cond, executors: execs }
+    },
+
+
+    // ── 直接符号调用（无条件）：PumpSell(amount: 100%)  ──────────────────────
+    <call: CallExpr> => Statement::Executor { call },
+};
+
+// ─── ExecBranch（分支单元，用于 SymbolName[...] 和 Condition => [...] 内） ──
+// 支持：
+//   cond => [exec1, exec2]   带括号的完整列表
+//   cond => exec             单项（无括号，方便 let 赋值等简写）
+
+ExecBranch: (Condition, Vec<ExecutorItem>) = {
+    <cond: Condition> "=>" "[" <execs: CommaList<ExecutorItem>> "]" => (cond, execs),
+    <cond: Condition> "=>" <item: ExecutorItem>                    => (cond, vec![item]),
+};
+
+// ─── ExecutorItem ────────────────────────────────────────────────────────────
+// 出现在 [...] 执行器列表中：
+//   PumpSell(amount: 100%)   带参数调用
+//   Done                     零参数调用（无括号语法糖）
+//   let peak = PumpPrice     序列内赋值
+
+ExecutorItem: ExecutorItem = {
+    // 序列内变量赋值（优先于普通 Ident，避免歧义）
+    "let" <name: Ident> "=" <val: Expr> => ExecutorItem::LetAssign {
+        var_name: name.to_string(),
+        value: val,
+    },
+    // 带参数调用：PumpSell(amount: 100%)
+    <call: CallExpr> => ExecutorItem::Executor(ExecutorCall {
+        executor: call.name,
+        args: call.args.into_iter().map(|a| (a.name, a.value)).collect(),
+    }),
+    // 零参数调用（无括号）：Done
+    // 注：必须在 CallExpr 之后，LALR(1) 通过后续 token 区分
+    <name: Ident> => ExecutorItem::Executor(ExecutorCall {
+        executor: SymbolRef::new(name),
+        args: HashMap::new(),
+    }),
+};
+
+// ─── Condition ───────────────────────────────────────────────────────────────
+
+Condition: Condition = {
+    <l: Expr> ">=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ge, right: r },
+    <l: Expr> "<=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Le, right: r },
+    <l: Expr> ">"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Gt, right: r },
+    <l: Expr> "<"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Lt, right: r },
+    <l: Expr> "==" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Eq, right: r },
+    <l: Expr> "!=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ne, right: r },
+    <call: CallExpr>         => Condition::Call(call),
+    "_"                      => Condition::Default,
+};
+
+// ─── 表达式（优先级：Sum > Mul > Atom）──────────────────────────────────────
+
+Expr: DataExpr = { <e: ExprSum> => e };
+
+ExprSum: DataExpr = {
+    <l: ExprSum> "+" <r: ExprMul> => DataExpr::BinOp { left: Box::new(l), op: BinOp::Add, right: Box::new(r) },
+    <l: ExprSum> "-" <r: ExprMul> => DataExpr::BinOp { left: Box::new(l), op: BinOp::Sub, right: Box::new(r) },
+    <e: ExprMul> => e,
+};
+
+ExprMul: DataExpr = {
+    <l: ExprMul> "*" <r: ExprAtom> => DataExpr::BinOp { left: Box::new(l), op: BinOp::Mul, right: Box::new(r) },
+    <l: ExprMul> "/" <r: ExprAtom> => DataExpr::BinOp { left: Box::new(l), op: BinOp::Div, right: Box::new(r) },
+    <e: ExprAtom> => e,
+};
+
+ExprAtom: DataExpr = {
+    // 函数调用：Symbol(arg: val, ...) —— 必须在 Ident 之前，因为都以 Ident 开头
+    <call: CallExpr> => DataExpr::Call(call),
+    <n: NumVal>   => DataExpr::Literal(Value::Number(n)),
+    <s: StrVal>   => DataExpr::Literal(Value::String(s)),
+    <lst: StringList> => DataExpr::Literal(Value::List(lst)),
+    <p: PercentVal>   => DataExpr::Literal(Value::Percent(p)),
+    <d: DurationVal>  => DataExpr::Literal(Value::Duration(d)),
+    <a: AmountVal>    => DataExpr::Literal(Value::Amount(a.0, a.1)),
+    <b: Bool>         => DataExpr::Literal(Value::Bool(b)),
+    "uninit"           => DataExpr::Literal(Value::Uninit),
+    // 标识符：变量引用 或 内置 DataItem 符号（checker 层区分）
+    <name: Ident> => DataExpr::Var(name.to_string()),
+    // 元组字面量：(expr, expr, ...) —— 至少两个元素
+    "(" <first: Expr> "," <rest: CommaList<Expr>> ")" => {
+        let mut v = vec![first];
+        v.extend(rest);
+        DataExpr::Tuple(v)
+    },
+    // 括号表达式：(expr)
+    "(" <e: Expr> ")" => e,
+};
+
+// ─── 解构目标列表 ────────────────────────────────────────────────────────────
+
+DestructureTargetList: Vec<Option<String>> = {
+    <t: DestructureTarget>                                   => vec![t],
+    <t: DestructureTarget> ","                               => vec![t],
+    <t: DestructureTarget> "," <rest: DestructureTargetList> => {
+        let mut v = vec![t]; v.extend(rest); v
+    },
+};
+
+DestructureTarget: Option<String> = {
+    "_"        => None,
+    <n: Ident> => Some(n.to_string()),
+};
+
+// ─── 基础值 ──────────────────────────────────────────────────────────────────
+
+PercentVal: f64  = { <n: NumVal> "%"   => n };
+DurationVal: u64 = {
+    <n: NumVal> "s" => n as u64,
+    <n: NumVal> "h" => (n * 3600.0) as u64,
+};
+AmountVal: (f64, String) = { <n: NumVal> <u: CurrencyUnit> => (n, u) };
+CurrencyUnit: String = {
+    "SOL" => "SOL".to_string(),
+};
+Bool: bool  = { "true" => true, "false" => false };
+
+StringList: Vec<Value> = {
+    "[" <lst: CommaList<StrVal>> "]" => lst.into_iter().map(Value::String).collect(),
+};
+
+StrVal: String = {
+    <s: StringLiteral> => {
+        let inner = &s[1..s.len() - 1];
+        inner.replace("\\\"", "\"").replace("\\\\", "\\")
+    },
+};
+
+NumVal: f64 = { <s: NumberLiteral> => s.parse::<f64>().unwrap() };
+
+// ─── CommaList<T> —— 支持尾逗号的通用列表 ──────────────────────────────────
+
+CommaList<T>: Vec<T> = {
+    => vec![],
+    <first: T> <rest: ("," <T>)*> ","? => {
+        let mut v = vec![first];
+        v.extend(rest);
+        v
+    },
+};
+
+// ─── ConditionList1 —— 非空、仅条件（无各自执行器）的列表，专用于 AllCall ───
+// 与 CommaList<ExecBranch> 的区别：此处条件之间只有逗号，没有 "=>"
+// LALR(1) 消歧：看到条件后紧跟 "=>" → ExecBranch(BranchedCall)；
+//               看到 "," 或 "]" → ConditionList1(AllCall)
+
+ConditionList1: Vec<Condition> = {
+    <first: Condition> <rest: ("," <Condition>)*> ","? => {
+        let mut v = vec![first];
+        v.extend(rest);
+        v
+    },
+};

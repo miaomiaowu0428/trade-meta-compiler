@@ -1,0 +1,70 @@
+//! 运行时值类型
+//!
+//! 定义在 checker-core 中，供 interpreter crate 使用，避免跨 crate 重复定义。
+//! 每个 variant 与 TypeSpec 一一对应，便于 validate_against 做类型验证。
+
+use crate::TypeSpec;
+
+/// 运行时值：DSL 变量和表达式在解释器中的实际值
+#[derive(Debug, Clone)]
+pub enum RuntimeValue {
+    Price(f64),
+    /// 带单位的数量值（value, unit）。unit 为空字符串表示无单位。
+    Amount(f64, String),
+    Duration(f64),
+    TimePoint(f64),
+    Percent(f64),
+    Count(f64),
+    Number(f64),
+    Bool(bool),
+    Str(String),
+    Tuple(Vec<RuntimeValue>),
+    /// 列表值
+    List(Vec<RuntimeValue>),
+    Unit,
+    /// 未初始化（buy 失败时解构变量的默认值）
+    Uninit,
+}
+
+impl RuntimeValue {
+    /// 强制转为 f64（适用于所有数值 variant）
+    pub fn as_f64(&self) -> f64 {
+        match self {
+            Self::Price(v)
+            | Self::Amount(v, _)
+            | Self::Duration(v)
+            | Self::TimePoint(v)
+            | Self::Percent(v)
+            | Self::Count(v)
+            | Self::Number(v) => *v,
+            _ => 0.0,
+        }
+    }
+
+    /// 是否为 Uninit
+    pub fn is_uninit(&self) -> bool {
+        matches!(self, Self::Uninit)
+    }
+
+    /// 返回该值对应的 TypeSpec（用于 validate_against 返回类型验证）
+    pub fn type_spec(&self) -> TypeSpec {
+        match self {
+            Self::Price(_) => TypeSpec::Price,
+            Self::Amount(_, _) => TypeSpec::Amount,
+            Self::Duration(_) => TypeSpec::Duration,
+            Self::TimePoint(_) => TypeSpec::TimePoint,
+            Self::Percent(_) => TypeSpec::Percent,
+            Self::Count(_) => TypeSpec::Count,
+            Self::Number(_) => TypeSpec::Number,
+            Self::Bool(_) => TypeSpec::Bool,
+            Self::Str(_) => TypeSpec::String,
+            Self::Tuple(vals) => TypeSpec::Tuple(vals.iter().map(|v| v.type_spec()).collect()),
+            Self::List(vals) => {
+                let elem = vals.first().map(|v| v.type_spec()).unwrap_or(TypeSpec::Any);
+                TypeSpec::List(Box::new(elem))
+            }
+            Self::Unit => TypeSpec::Any,
+            Self::Uninit => TypeSpec::Any,
+        }
+    }
+}
