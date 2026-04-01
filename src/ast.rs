@@ -183,17 +183,20 @@ pub enum Statement {
 
     /// 控制流调用：`SymbolName[cond => [execs], ...],`
     ///
-    /// `Spawn`、`OneOf` 等都是用此语法注册的插件符号，
-    /// 元编译器不硬编码其语义——解释器按名称分派行为。
-    ///
-    /// `All[cond1, cond2] => [execs]` 也归入此变体，
-    /// 解析时将共享的 executor 列表复制到每个 (cond, execs) 分支中。
+    /// `OneOf` 等竞争语义的插件符号用此语法注册。
+    /// 元编译器不硬编码语义——解释器按名称分派行为。
     ControlFlow {
-        /// 符号名（如 OneOf、Spawn、All）
+        /// 符号名（如 OneOf）
         name: String,
         /// 分支列表：每项为 (Condition, 执行器列表)
         branches: Vec<(Condition, Vec<ExecutorItem>)>,
     },
+
+    /// 后台派生：`Spawn[exec1, exec2, ...],`
+    ///
+    /// 将给定的执行器序列展开到后台 task 中依次运行。
+    /// 共享同一个 `TradeTaskContext`，Done 信号自动传播。
+    Spawn { items: Vec<ExecutorItem> },
 }
 
 /// 条件
@@ -207,6 +210,8 @@ pub enum Condition {
     },
     /// 函数调用形式的条件（V6.0）
     Call(CallExpr),
+    /// 复合条件：All[cond1, cond2, ...] — 并发评估，全部为 true 才通过
+    All { conditions: Vec<Condition> },
     /// 默认条件 _
     Default,
 }

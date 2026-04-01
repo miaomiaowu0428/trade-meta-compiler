@@ -202,8 +202,7 @@ impl Checker {
                 }
             }
             Statement::ControlFlow { name, branches } => {
-                // 控制流调用（OneOf / Spawn 等注册符号）
-                // 检查符号是否属于 Executor 类别（宽松检查，不硬要特定类型）
+                // 控制流（OneOf 等竞争语义符号）— 检查符号已注册为 Executor
                 let known = self
                     .registry
                     .lookup(name, SymbolCategory::Executor)
@@ -218,6 +217,9 @@ impl Checker {
                     self.check_condition(condition)?;
                     self.check_executor_sequence(executors)?;
                 }
+            }
+            Statement::Spawn { items } => {
+                self.check_executor_sequence(items)?;
             }
             Statement::ConditionExec {
                 condition,
@@ -376,6 +378,11 @@ impl Checker {
             Condition::Call(call_expr) => {
                 // V6.0: 函数调用形式的条件
                 self.check_call_expr(call_expr, SymbolCategory::Condition)?;
+            }
+            Condition::All { conditions } => {
+                for c in conditions {
+                    self.check_condition(c)?;
+                }
             }
             Condition::Default => {}
         }
@@ -699,6 +706,13 @@ impl Checker {
             Statement::LetDestructure { value, .. } => {
                 self.check_data_expr_ctx(value, tracker)?;
             }
+            Statement::Spawn { items } => {
+                // Spawn 后台派生，内部 context 变更不传播回父流
+                let mut branch = tracker.clone();
+                for item in items {
+                    self.check_exec_item_ctx(item, &mut branch)?;
+                }
+            }
         }
         Ok(())
     }
@@ -735,6 +749,11 @@ impl Checker {
             Condition::Call(call) => {
                 self.apply_symbol_ctx(&call.name.name, SymbolCategory::Condition, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
+            }
+            Condition::All { conditions } => {
+                for c in conditions {
+                    self.check_condition_ctx(c, tracker)?;
+                }
             }
             Condition::Default => {}
         }
