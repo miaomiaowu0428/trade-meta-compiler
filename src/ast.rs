@@ -185,24 +185,14 @@ pub enum Statement {
     ///
     /// `Spawn`、`OneOf` 等都是用此语法注册的插件符号，
     /// 元编译器不硬编码其语义——解释器按名称分派行为。
+    ///
+    /// `All[cond1, cond2] => [execs]` 也归入此变体，
+    /// 解析时将共享的 executor 列表复制到每个 (cond, execs) 分支中。
     ControlFlow {
-        /// 符号名（如 OneOf、Spawn）
+        /// 符号名（如 OneOf、Spawn、All）
         name: String,
         /// 分支列表：每项为 (Condition, 执行器列表)
         branches: Vec<(Condition, Vec<ExecutorItem>)>,
-    },
-
-    /// All 组合子：`All[cond1, cond2, ...] => [exec1, ...],`
-    ///
-    /// 所有条件全部满足后，执行关联的执行器序列。
-    /// 与 OneOf 的区别：条件没有各自对应的执行器，而是共享同一个执行器列表。
-    AllCall {
-        /// 符号名（对应注册的 Executor 符号，如 "All"）
-        name: String,
-        /// 必须全部满足的条件列表
-        conditions: Vec<Condition>,
-        /// 所有条件满足后执行的序列
-        executors: Vec<ExecutorItem>,
     },
 }
 

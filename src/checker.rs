@@ -230,29 +230,6 @@ impl Checker {
             Statement::LetDestructure { targets, value } => {
                 self.check_destructure_targets(targets, value)?;
             }
-            Statement::AllCall {
-                name,
-                conditions,
-                executors,
-            } => {
-                // 检查 All 符号已注册为 Executor
-                let known = self
-                    .registry
-                    .lookup(name, SymbolCategory::Executor)
-                    .is_some();
-                if !known {
-                    return Err(CheckError::UndefinedSymbol {
-                        name: name.clone(),
-                        category: SymbolCategory::Executor,
-                    });
-                }
-                // 检查所有条件
-                for cond in conditions {
-                    self.check_condition(cond)?;
-                }
-                // 检查共享执行器列表
-                self.check_executor_sequence(executors)?;
-            }
         }
         Ok(())
     }
@@ -721,20 +698,6 @@ impl Checker {
             }
             Statement::LetDestructure { value, .. } => {
                 self.check_data_expr_ctx(value, tracker)?;
-            }
-            Statement::AllCall {
-                name,
-                conditions,
-                executors,
-            } => {
-                self.apply_symbol_ctx(name, SymbolCategory::Executor, tracker)?;
-                for cond in conditions {
-                    self.check_condition_ctx(cond, tracker)?;
-                }
-                let mut branch = tracker.clone();
-                for item in executors {
-                    self.check_exec_item_ctx(item, &mut branch)?;
-                }
             }
         }
         Ok(())

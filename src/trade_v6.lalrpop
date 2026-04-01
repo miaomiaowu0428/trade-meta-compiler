@@ -208,9 +208,10 @@ Statement: Statement = {
 
     // ── All 组合子：All[cond1, cond2] => [execs] ─────────────────────────────
     // 所有条件满足后执行共同的执行器列表；
-    // 条件之间没有各自的 "=>" 只有逗号，末尾 "] => [" 为语法分隔
+    // 解析时将 execs 复制到每个条件分支，统一为 ControlFlow
     <name: Ident> "[" <conds: ConditionList1> "]" "=>" "[" <execs: CommaList<ExecutorItem>> "]" => {
-        Statement::AllCall { name: name.to_string(), conditions: conds, executors: execs }
+        let branches = conds.into_iter().map(|c| (c, execs.clone())).collect();
+        Statement::ControlFlow { name: name.to_string(), branches }
     },
 
     // ── let 解构赋值：let (a, b) = expr ──────────────────────────────
