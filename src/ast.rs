@@ -205,7 +205,7 @@ pub enum Condition {
         name: String,
         conditions: Vec<Condition>,
     },
-    /// 序列条件：[exec1, exec2, ...] — 顺序执行完成后返回 true
+    /// 序列条件：Do[exec1, exec2, ...] — 顺序执行完成后返回 true
     Seq { items: Vec<ExecutorItem> },
     /// 默认条件 _
     Default,

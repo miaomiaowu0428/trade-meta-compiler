@@ -42,6 +42,7 @@ match {
 
     // 语句级关键字
     "Spawn",
+    "Do",
 
     // 变量类型关键字（vars 块里使用）
     "Price",
@@ -267,8 +268,8 @@ Condition: Condition = {
     <name: Ident> "[" <conds: CommaList<Condition>> "]" => Condition::Combinator {
         name: name.to_string(), conditions: conds
     },
-    // 序列条件（内联）：[exec1, exec2, ...]，顺序跑完后返回 true
-    "[" <items: CommaList<ExecutorItem>> "]" => Condition::Seq { items },
+    // 序列条件：Do[exec1, exec2, ...]，顺序跑完执行器序列后返回 true
+    "Do" "[" <items: CommaList<ExecutorItem>> "]" => Condition::Seq { items },
     <l: Expr> ">=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ge, right: r },
     <l: Expr> "<=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Le, right: r },
     <l: Expr> ">"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Gt, right: r },
