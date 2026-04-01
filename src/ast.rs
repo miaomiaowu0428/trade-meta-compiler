@@ -60,7 +60,7 @@ pub struct MonitorBlock {
 /// 触发后的交易流程：buy → sell → finally
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriggerBody {
-    pub buy: BuySpec,
+    pub buy: Vec<Statement>,
     pub sell: Vec<Statement>,
     /// 兜底执行器序列（sell 执行完毕后，不论 Done 还是顺序结束，都执行此块）
     pub sell_finally: Vec<ExecutorItem>,
@@ -76,33 +76,6 @@ impl From<TriggerBody> for MonitorBlock {
             on_trigger: tb,
         }
     }
-}
-
-/// 买入规范（支持解构赋值和列表模式）
-#[derive(Debug, Clone, PartialEq)]
-pub enum BuySpec {
-    /// 直接调用：buy: PumpBuy(...)
-    Direct(CallExpr),
-    /// 解构赋值：buy: let (var1, var2) = expr
-    Destructure {
-        targets: Vec<Option<String>>,
-        value: DataExpr,
-    },
-    /// 列表模式：buy: [item1, item2, ...]
-    /// 顺序执行，失败项解构变量设为 Uninit，至少一项成功则进 sell
-    List(Vec<BuyItem>),
-}
-
-/// buy 列表中的单个项
-#[derive(Debug, Clone, PartialEq)]
-pub enum BuyItem {
-    /// 直接调用：PumpBuy(...)
-    Direct(CallExpr),
-    /// 解构赋值：let (var1, var2) = expr
-    Destructure {
-        targets: Vec<Option<String>>,
-        value: DataExpr,
-    },
 }
 
 /// 统一的函数调用表达式（V6.0 新增）

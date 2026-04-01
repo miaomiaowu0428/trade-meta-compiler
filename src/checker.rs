@@ -41,8 +41,10 @@ impl Checker {
         // 检查 Monitor 调用
         self.check_call_expr(&monitor.monitor_call, SymbolCategory::Monitor)?;
 
-        // 检查 buy
-        self.check_buy_spec(&monitor.on_trigger.buy)?;
+        // 检查 buy（与 sell 使用完全一致的 Statement 检查）
+        for stmt in &monitor.on_trigger.buy {
+            self.check_statement(stmt)?;
+        }
 
         // 检查 sell 语句列表
         for stmt in &monitor.on_trigger.sell {
@@ -54,32 +56,6 @@ impl Checker {
             self.check_executor_sequence(&monitor.on_trigger.sell_finally)?;
         }
 
-        Ok(())
-    }
-
-    /// 检查买入规范（支持解构赋值）
-    fn check_buy_spec(&self, buy: &BuySpec) -> CheckResult<()> {
-        match buy {
-            BuySpec::Direct(call) => {
-                // 直接调用，检查是否是合法的 Executor
-                self.check_call_expr(call, SymbolCategory::Executor)?;
-            }
-            BuySpec::Destructure { targets, value } => {
-                self.check_destructure_targets(targets, value)?;
-            }
-            BuySpec::List(items) => {
-                for item in items {
-                    match item {
-                        BuyItem::Direct(call) => {
-                            self.check_call_expr(call, SymbolCategory::Executor)?;
-                        }
-                        BuyItem::Destructure { targets, value } => {
-                            self.check_destructure_targets(targets, value)?;
-                        }
-                    }
-                }
-            }
-        }
         Ok(())
     }
 
@@ -525,32 +501,9 @@ impl Checker {
             &mut tracker,
         )?;
 
-        // 2. Buy 阶段
-        match &monitor.on_trigger.buy {
-            BuySpec::Direct(call) => {
-                self.apply_symbol_ctx(&call.name.name, SymbolCategory::Executor, &mut tracker)?;
-                self.check_call_args_ctx(&call.args, &mut tracker)?;
-            }
-            BuySpec::Destructure { value, .. } => {
-                self.check_data_expr_ctx(value, &mut tracker)?;
-            }
-            BuySpec::List(items) => {
-                for item in items {
-                    match item {
-                        BuyItem::Direct(call) => {
-                            self.apply_symbol_ctx(
-                                &call.name.name,
-                                SymbolCategory::Executor,
-                                &mut tracker,
-                            )?;
-                            self.check_call_args_ctx(&call.args, &mut tracker)?;
-                        }
-                        BuyItem::Destructure { value, .. } => {
-                            self.check_data_expr_ctx(value, &mut tracker)?;
-                        }
-                    }
-                }
-            }
+        // 2. Buy 阶段（与 sell 完全一致的 Statement 检查）
+        for stmt in &monitor.on_trigger.buy {
+            self.check_stmt_ctx(stmt, &mut tracker)?;
         }
 
         // 3. Sell 语句（顺序）

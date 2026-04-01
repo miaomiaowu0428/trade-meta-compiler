@@ -150,36 +150,14 @@ MonitorBlock: MonitorBlock = {
 };
 
 TriggerBody: TriggerBody = {
-    // 有 finally 块：buy ... sell [...] => [...]
-    "buy" ":" <buy: BuySpec> "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
+    // 有 finally 块：buy [...] sell [...] => [...]
+    "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
         TriggerBody { buy, sell, sell_finally: finally }
     },
     // 无 finally 块
-    "buy" ":" <buy: BuySpec> "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
+    "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
         TriggerBody { buy, sell, sell_finally: vec![] }
     },
-};
-
-// ─── BuySpec ─────────────────────────────────────────────────────────────────
-
-BuySpec: BuySpec = {
-    // let (expected_price, actual_price) = expr
-    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
-        BuySpec::Destructure { targets, value: val }
-    },
-    // PumpBuy(...)
-    <call: CallExpr> => BuySpec::Direct(call),
-    // 列表模式：buy: [item1, item2, ...]
-    "[" <items: CommaList<BuyItem>> "]" => BuySpec::List(items),
-};
-
-// ─── BuyItem（buy 列表中的单个项）─────────────────────────────────────────
-
-BuyItem: BuyItem = {
-    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
-        BuyItem::Destructure { targets, value: val }
-    },
-    <call: CallExpr> => BuyItem::Direct(call),
 };
 
 // ─── CallExpr / NamedArg ─────────────────────────────────────────────────────
