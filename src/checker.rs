@@ -201,8 +201,8 @@ impl Checker {
                     }
                 }
             }
-            Statement::BranchedCall { name, branches } => {
-                // 通用分支调用（OneOf / Spawn 等注册符号）
+            Statement::ControlFlow { name, branches } => {
+                // 控制流调用（OneOf / Spawn 等注册符号）
                 // 检查符号是否属于 Executor 类别（宽松检查，不硬要特定类型）
                 let known = self
                     .registry
@@ -668,7 +668,7 @@ impl Checker {
                 self.apply_symbol_ctx(&call.name.name, cat, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
             }
-            Statement::BranchedCall { name, branches } => {
+            Statement::ControlFlow { name, branches } => {
                 if let Some(meta) = self.registry.lookup(name, SymbolCategory::Executor) {
                     for ix in &meta.contexts {
                         let proto = ix.protocol;

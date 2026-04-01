@@ -203,7 +203,7 @@ Statement: Statement = {
     // ── 通用分支调用：SymbolName[cond => [execs], ...] ──────────────────────
     // OneOf / Spawn 等注册符号都用这个形式
     <name: Ident> "[" <branches: CommaList<ExecBranch>> "]" => {
-        Statement::BranchedCall { name: name.to_string(), branches }
+        Statement::ControlFlow { name: name.to_string(), branches }
     },
 
     // ── All 组合子：All[cond1, cond2] => [execs] ─────────────────────────────

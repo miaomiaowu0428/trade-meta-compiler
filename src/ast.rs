@@ -181,11 +181,11 @@ pub enum Statement {
         executors: Vec<ExecutorItem>,
     },
 
-    /// 通用分支调用：`SymbolName[cond => [execs], ...],`
+    /// 控制流调用：`SymbolName[cond => [execs], ...],`
     ///
     /// `Spawn`、`OneOf` 等都是用此语法注册的插件符号，
     /// 元编译器不硬编码其语义——解释器按名称分派行为。
-    BranchedCall {
+    ControlFlow {
         /// 符号名（如 OneOf、Spawn）
         name: String,
         /// 分支列表：每项为 (Condition, 执行器列表)
