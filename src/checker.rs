@@ -201,23 +201,6 @@ impl Checker {
                     }
                 }
             }
-            Statement::ControlFlow { name, branches } => {
-                // 控制流（OneOf 等竞争语义符号）— 检查符号已注册为 Executor
-                let known = self
-                    .registry
-                    .lookup(name, SymbolCategory::Executor)
-                    .is_some();
-                if !known {
-                    return Err(CheckError::UndefinedSymbol {
-                        name: name.clone(),
-                        category: SymbolCategory::Executor,
-                    });
-                }
-                for (condition, executors) in branches {
-                    self.check_condition(condition)?;
-                    self.check_executor_sequence(executors)?;
-                }
-            }
             Statement::Spawn { items } => {
                 self.check_executor_sequence(items)?;
             }
@@ -315,6 +298,9 @@ impl Checker {
                         });
                     }
                 }
+                ExecutorItem::LetDestructure { targets, value } => {
+                    self.check_destructure_targets(targets, value)?;
+                }
             }
         }
         Ok(())
@@ -379,10 +365,20 @@ impl Checker {
                 // V6.0: 函数调用形式的条件
                 self.check_call_expr(call_expr, SymbolCategory::Condition)?;
             }
-            Condition::All { conditions } => {
+            Condition::Combinator { name, conditions } => {
+                // 验证组合子符号已注册
+                if self.registry.lookup(name, SymbolCategory::Condition).is_none() {
+                    return Err(CheckError::UndefinedSymbol {
+                        name: name.clone(),
+                        category: SymbolCategory::Condition,
+                    });
+                }
                 for c in conditions {
                     self.check_condition(c)?;
                 }
+            }
+            Condition::Seq { items } => {
+                self.check_executor_sequence(items)?;
             }
             Condition::Default => {}
         }
@@ -652,47 +648,7 @@ impl Checker {
                 self.apply_symbol_ctx(&call.name.name, cat, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
             }
-            Statement::ControlFlow { name, branches } => {
-                if let Some(meta) = self.registry.lookup(name, SymbolCategory::Executor) {
-                    for ix in &meta.contexts {
-                        let proto = ix.protocol;
-                        match ix.op {
-                            ContextOp::Produce => {
-                                tracker
-                                    .state
-                                    .insert(proto.to_string(), ContextStatus::Available);
-                            }
-                            ContextOp::Need => {
-                                if tracker.state.get(proto).is_none() {
-                                    return Err(CheckError::ContextNotAvailable {
-                                        protocol: proto.to_string(),
-                                        symbol: name.clone(),
-                                        op: ix.op.to_string(),
-                                    });
-                                }
-                            }
-                            ContextOp::Consume => {
-                                if tracker.state.get(proto).is_none() {
-                                    return Err(CheckError::ContextNotAvailable {
-                                        protocol: proto.to_string(),
-                                        symbol: name.clone(),
-                                        op: ix.op.to_string(),
-                                    });
-                                }
-                                tracker.state.remove(proto);
-                            }
-                        }
-                    }
-                }
-                // 分支独立分析（不传播回父流）
-                for (cond, execs) in branches {
-                    let mut branch = tracker.clone();
-                    self.check_condition_ctx(cond, &mut branch)?;
-                    for item in execs {
-                        self.check_exec_item_ctx(item, &mut branch)?;
-                    }
-                }
-            }
+            // ControlFlow 已移除，All/OneOf 通过 Condition::Combinator 处理
             Statement::ConditionExec {
                 condition,
                 executors,
@@ -732,6 +688,9 @@ impl Checker {
             ExecutorItem::LetAssign { value, .. } => {
                 self.check_expr_ctx(value, tracker)?;
             }
+            ExecutorItem::LetDestructure { value, .. } => {
+                self.check_expr_ctx(value, tracker)?;
+            }
         }
         Ok(())
     }
@@ -750,9 +709,16 @@ impl Checker {
                 self.apply_symbol_ctx(&call.name.name, SymbolCategory::Condition, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
             }
-            Condition::All { conditions } => {
+            Condition::Combinator { name: _, conditions } => {
+                // 各子条件独立分析，不传播回父流
                 for c in conditions {
-                    self.check_condition_ctx(c, tracker)?;
+                    let mut branch = tracker.clone();
+                    self.check_condition_ctx(c, &mut branch)?;
+                }
+            }
+            Condition::Seq { items } => {
+                for item in items {
+                    self.check_exec_item_ctx(item, tracker)?;
                 }
             }
             Condition::Default => {}

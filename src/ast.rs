@@ -181,17 +181,6 @@ pub enum Statement {
         executors: Vec<ExecutorItem>,
     },
 
-    /// 控制流调用：`SymbolName[cond => [execs], ...],`
-    ///
-    /// `OneOf` 等竞争语义的插件符号用此语法注册。
-    /// 元编译器不硬编码语义——解释器按名称分派行为。
-    ControlFlow {
-        /// 符号名（如 OneOf）
-        name: String,
-        /// 分支列表：每项为 (Condition, 执行器列表)
-        branches: Vec<(Condition, Vec<ExecutorItem>)>,
-    },
-
     /// 后台派生：`Spawn[exec1, exec2, ...],`
     ///
     /// 将给定的执行器序列展开到后台 task 中依次运行。
@@ -208,10 +197,16 @@ pub enum Condition {
         op: CompareOp,
         right: DataExpr,
     },
-    /// 函数调用形式的条件（V6.0）
+    /// 函数调用形式的条件（V6.0）：Timeout(duration: 15s)
     Call(CallExpr),
-    /// 复合条件：All[cond1, cond2, ...] — 并发评估，全部为 true 才通过
-    All { conditions: Vec<Condition> },
+    /// 条件组合子：All[c1, c2, ...] / OneOf[c1, c2, ...] / 自定义组合子
+    /// name 为注册的条件符号名，conditions 为子条件列表
+    Combinator {
+        name: String,
+        conditions: Vec<Condition>,
+    },
+    /// 序列条件：[exec1, exec2, ...] — 顺序执行完成后返回 true
+    Seq { items: Vec<ExecutorItem> },
     /// 默认条件 _
     Default,
 }
@@ -265,8 +260,13 @@ pub enum BinOp {
 pub enum ExecutorItem {
     /// 执行器调用（包含带参数的，也包含零参数的如 Done）
     Executor(ExecutorCall),
-    /// 序列内变量赋値：`let peak = PumpPrice`
+    /// 序列内变量赋值：`let peak = PumpPrice`
     LetAssign { var_name: String, value: DataExpr },
+    /// 序列内解构赋值：`let (a, b) = expr`
+    LetDestructure {
+        targets: Vec<Option<String>>,
+        value: DataExpr,
+    },
 }
 
 /// 操作符（执行器序列）

@@ -40,6 +40,9 @@ match {
     "false",
     "uninit",
 
+    // 语句级关键字
+    "Spawn",
+
     // 变量类型关键字（vars 块里使用）
     "Price",
     "Amount",
@@ -206,11 +209,6 @@ Statement: Statement = {
         Statement::Spawn { items }
     },
 
-    // ── 通用控制流：SymbolName[cond => [execs], ...] ────────────────────
-    // OneOf 等竞争语义符号用此形式（Spawn/All 已是关键字，不会命中此规则）
-    <name: Ident> "[" <branches: CommaList<ExecBranch>> "]" => {
-        Statement::ControlFlow { name: name.to_string(), branches }
-    },
 
     // ── let 解构赋值：let (a, b) = expr ──────────────────────────────
     "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
@@ -233,16 +231,6 @@ Statement: Statement = {
     <call: CallExpr> => Statement::Executor { call },
 };
 
-// ─── ExecBranch（分支单元，用于 SymbolName[...] 和 Condition => [...] 内） ──
-// 支持：
-//   cond => [exec1, exec2]   带括号的完整列表
-//   cond => exec             单项（无括号，方便 let 赋值等简写）
-
-ExecBranch: (Condition, Vec<ExecutorItem>) = {
-    <cond: Condition> "=>" "[" <execs: CommaList<ExecutorItem>> "]" => (cond, execs),
-    <cond: Condition> "=>" <item: ExecutorItem>                    => (cond, vec![item]),
-};
-
 // ─── ExecutorItem ────────────────────────────────────────────────────────────
 // 出现在 [...] 执行器列表中：
 //   PumpSell(amount: 100%)   带参数调用
@@ -250,6 +238,10 @@ ExecBranch: (Condition, Vec<ExecutorItem>) = {
 //   let peak = PumpPrice     序列内赋值
 
 ExecutorItem: ExecutorItem = {
+    // 序列内解构赋值：let (a, b) = expr（优先于单变量赋值，避免歧义）
+    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => ExecutorItem::LetDestructure {
+        targets, value: val,
+    },
     // 序列内变量赋值（优先于普通 Ident，避免歧义）
     "let" <name: Ident> "=" <val: Expr> => ExecutorItem::LetAssign {
         var_name: name.to_string(),
@@ -271,8 +263,12 @@ ExecutorItem: ExecutorItem = {
 // ─── Condition ───────────────────────────────────────────────────────────────
 
 Condition: Condition = {
-    // All 复合条件：All[cond1, cond2, ...]，并发评估全部为 true 才通过
-    "All" "[" <conds: CommaList<Condition>> "]" => Condition::All { conditions: conds },
+    // 条件组合子：SymbolName[cond1, cond2, ...]，如 All / OneOf / 自定义
+    <name: Ident> "[" <conds: CommaList<Condition>> "]" => Condition::Combinator {
+        name: name.to_string(), conditions: conds
+    },
+    // 序列条件（内联）：[exec1, exec2, ...]，顺序跑完后返回 true
+    "[" <items: CommaList<ExecutorItem>> "]" => Condition::Seq { items },
     <l: Expr> ">=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ge, right: r },
     <l: Expr> "<=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Le, right: r },
     <l: Expr> ">"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Gt, right: r },

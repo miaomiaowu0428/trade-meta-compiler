@@ -14,16 +14,18 @@
 use crate::symbol_table::{ParamSpec, SymbolCategory, SymbolMetadata, SymbolRegistry};
 use crate::types::TypeSpec;
 
-/// 构建包含所有内置控制流符号的符号注册表
+/// 构建包含所有内置符号的符号注册表
 ///
 /// 内置符号（大驼峰命名规范）：
 ///
 /// | 符号      | 类别      | 说明                                                 |
 /// |-----------|-----------|------------------------------------------------------|
-/// | `Done`  | Executor | 终止当前 sell 序列，触发 Done 信号                   |
-/// | `Spawn` | Executor | 启动并发后台分支；`Done` 触发后整个 Task 终止        |
-/// | `OneOf` | Executor | 并发竞争多分支，第一个条件成立的分支的执行器优先执行 |
-/// | `All`   | Executor | 等待所有条件均满足后执行关联执行器                   |
+/// | `Done`  | Executor  | 终止当前 sell 序列，触发 Done 信号                   |
+/// | `All`   | Condition | 条件组合子：并发评估全部为 true 才通过               |
+/// | `OneOf` | Condition | 条件组合子：并发竞争，任意一个 true 即通过           |
+///
+/// `Spawn` 是语句级关键字，由 pipeline 直接处理。
+/// `[...]` 内联序列条件由 grammar 直接映射，不在符号表中。
 pub fn builtin_symbol_registry() -> SymbolRegistry {
     let mut r = SymbolRegistry::new();
     for m in builtin_symbols() {
@@ -34,7 +36,7 @@ pub fn builtin_symbol_registry() -> SymbolRegistry {
 
 fn builtin_symbols() -> Vec<SymbolMetadata> {
     vec![
-        // ── 控制流 Executor ──────────────────────────────────────────────────
+        // ── 内置 Executor ────────────────────────────────────────────────────
         SymbolMetadata {
             name: "Done",
             returns: None,
@@ -42,27 +44,20 @@ fn builtin_symbols() -> Vec<SymbolMetadata> {
             params: vec![],
             contexts: vec![],
         },
+        // ── 条件组合子 ───────────────────────────────────────────────────────
         SymbolMetadata {
-            name: "Spawn",
+            name: "All",
             returns: None,
-            category: SymbolCategory::Executor,
+            category: SymbolCategory::Condition,
             params: vec![],
             contexts: vec![],
         },
         SymbolMetadata {
             name: "OneOf",
             returns: None,
-            category: SymbolCategory::Executor,
+            category: SymbolCategory::Condition,
             params: vec![],
             contexts: vec![],
         },
-        SymbolMetadata {
-            name: "All",
-            returns: None,
-            category: SymbolCategory::Executor,
-            params: vec![],
-            contexts: vec![],
-        },
-
     ]
 }
