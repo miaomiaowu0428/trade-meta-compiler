@@ -244,6 +244,7 @@ impl Checker {
                 VarType::TimePoint => TypeSpec::TimePoint,
                 VarType::Percent => TypeSpec::Percent,
                 VarType::Count => TypeSpec::Count,
+                VarType::Number => TypeSpec::Number,
                 VarType::Address => TypeSpec::Address,
             };
             self.var_types.insert(var.name.clone(), ty);

@@ -129,6 +129,7 @@ VarType: VarType = {
     "TimePoint" => VarType::TimePoint,
     "Percent"   => VarType::Percent,
     "Count"     => VarType::Count,
+    "Number"    => VarType::Number,
     "Address"   => VarType::Address,
 };
 

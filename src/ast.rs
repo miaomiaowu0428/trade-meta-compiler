@@ -125,6 +125,7 @@ pub enum VarType {
     TimePoint,
     Percent,
     Count,
+    Number,
     /// 链上地址（内部表示为字符串）
     Address,
 }
