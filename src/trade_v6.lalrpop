@@ -209,6 +209,11 @@ Statement: Statement = {
 
     // ── 直接符号调用（无条件）：PumpSell(amount: 100%)  ──────────────────────
     <call: CallExpr> => Statement::Executor { call },
+
+    // ── 无参数符号调用（无括号）：LogContext  ────────────────────────────────
+    <name: Ident> => Statement::Executor {
+        call: CallExpr { name: SymbolRef::new(name), args: vec![] }
+    },
 };
 
 // ─── ExecutorItem ────────────────────────────────────────────────────────────
