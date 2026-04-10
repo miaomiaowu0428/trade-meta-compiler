@@ -267,7 +267,7 @@ pub enum Value {
     Bool(bool),
     /// 百分比
     Percent(f64),
-    /// 时间段（秒）
+    /// 时间段（毫秒）
     Duration(u64),
     /// 带单位的数量（如 0.5 SOL, 100 USDC）
     Amount(f64, std::string::String),

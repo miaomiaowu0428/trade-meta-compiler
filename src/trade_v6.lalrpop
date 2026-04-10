@@ -55,8 +55,9 @@ match {
 
     // 单位
     "SOL",
+    "ms",
     "s",
-    "h",
+    "min",
 
     // 单字符运算符
     "<",
@@ -322,8 +323,9 @@ DestructureTarget: Option<String> = {
 
 PercentVal: f64  = { <n: NumVal> "%"   => n };
 DurationVal: u64 = {
-    <n: NumVal> "s" => n as u64,
-    <n: NumVal> "h" => (n * 3600.0) as u64,
+    <n: NumVal> "ms"  => n as u64,
+    <n: NumVal> "s"   => (n * 1_000.0) as u64,
+    <n: NumVal> "min" => (n * 60_000.0) as u64,
 };
 AmountVal: (f64, String) = { <n: NumVal> <u: CurrencyUnit> => (n, u) };
 CurrencyUnit: String = {
