@@ -26,6 +26,13 @@ pub enum RuntimeValue {
     Uninit,
 }
 
+impl Default for RuntimeValue {
+    /// 参数缺失时的占位值（required param 找不到对应 arg 时使用）
+    fn default() -> Self {
+        Self::Uninit
+    }
+}
+
 impl RuntimeValue {
     /// 强制转为 f64（适用于所有数值 variant）
     pub fn as_f64(&self) -> f64 {
