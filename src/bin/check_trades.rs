@@ -71,7 +71,12 @@ fn main() {
         }
     }
 
-    println!("\n共 {} 个文件，{} 个通过，{} 个失败", total, total - failed, failed);
+    println!(
+        "\n共 {} 个文件，{} 个通过，{} 个失败",
+        total,
+        total - failed,
+        failed
+    );
 
     if failed > 0 {
         process::exit(1);

@@ -344,7 +344,11 @@ impl Checker {
             }
             Condition::Combinator { name, conditions } => {
                 // 验证组合子符号已注册
-                if self.registry.lookup(name, SymbolCategory::Condition).is_none() {
+                if self
+                    .registry
+                    .lookup(name, SymbolCategory::Condition)
+                    .is_none()
+                {
                     return Err(CheckError::UndefinedSymbol {
                         name: name.clone(),
                         category: SymbolCategory::Condition,
@@ -663,7 +667,10 @@ impl Checker {
                 self.apply_symbol_ctx(&call.name.name, SymbolCategory::Condition, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
             }
-            Condition::Combinator { name: _, conditions } => {
+            Condition::Combinator {
+                name: _,
+                conditions,
+            } => {
                 // 各子条件独立分析，不传播回父流
                 for c in conditions {
                     let mut branch = tracker.clone();
