@@ -224,6 +224,8 @@ pub enum BinOp {
     Sub, // -
     Mul, // *
     Div, // /
+    /// Uninit 回退：左侧为 Uninit 时取右侧值，否则取左侧值（类似 `??` 运算符）
+    Or,  // OR
 }
 
 /// 执行器序列项（V6.0 新设计）

@@ -39,6 +39,7 @@ match {
     "true",
     "false",
     "uninit",
+    "OR",
 
     // 语句级关键字
     "Spawn",
@@ -265,9 +266,14 @@ Condition: Condition = {
     "_"                      => Condition::Default,
 };
 
-// ─── 表达式（优先级：Sum > Mul > Atom）──────────────────────────────────────
+// ─── 表达式（优先级：Or < Sum > Mul > Atom）──────────────────────────────────
 
-Expr: DataExpr = { <e: ExprSum> => e };
+Expr: DataExpr = { <e: ExprOr> => e };
+
+ExprOr: DataExpr = {
+    <l: ExprOr> "OR" <r: ExprSum> => DataExpr::BinOp { left: Box::new(l), op: BinOp::Or, right: Box::new(r) },
+    <e: ExprSum> => e,
+};
 
 ExprSum: DataExpr = {
     <l: ExprSum> "+" <r: ExprMul> => DataExpr::BinOp { left: Box::new(l), op: BinOp::Add, right: Box::new(r) },

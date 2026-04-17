@@ -406,6 +406,7 @@ impl Checker {
                     BinOp::Sub => crate::types::BinOp::Sub,
                     BinOp::Mul => crate::types::BinOp::Mul,
                     BinOp::Div => crate::types::BinOp::Div,
+                    BinOp::Or  => crate::types::BinOp::Or,
                 };
 
                 TypeChecker::check_binary_op(&left_ty, bin_op, &right_ty).ok_or_else(|| {

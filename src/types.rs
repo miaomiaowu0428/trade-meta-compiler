@@ -125,6 +125,11 @@ impl TypeChecker {
                     None
                 }
             }
+            Or => {
+                // 左侧可能是 Uninit(Any)，结果类型取右侧（fallback）。
+                // 若左侧已是确定类型，也兼容接受（右侧是静态 default 值）。
+                Some(right.clone())
+            }
         }
     }
 
@@ -159,6 +164,8 @@ pub enum BinOp {
     Sub, // -
     Mul, // *
     Div, // /
+    /// Uninit 回退
+    Or,  // OR
 }
 
 #[cfg(test)]
