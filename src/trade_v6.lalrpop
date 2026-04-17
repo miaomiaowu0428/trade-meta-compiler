@@ -185,8 +185,9 @@ ArgValExpr: DataExpr = {
 // ─── Statement ───────────────────────────────────────────────────────────────
 
 Statement: Statement = {
-    // ── Spawn：后台派生  Spawn[exec1, exec2, ...] ─────────────────────────
+    // ── Spawn：后台派生  Spawn[item1, item2, ...] ─────────────────────────
     // Spawn 为关键字，不经过 ControlFlow handler，pipeline 直接处理
+    // ExecutorItem 已统一支持 condition => [execs]，无需额外包装
     "Spawn" "[" <items: CommaList<ExecutorItem>> "]" => {
         Statement::Spawn { items }
     },
@@ -219,28 +220,59 @@ Statement: Statement = {
 };
 
 // ─── ExecutorItem ────────────────────────────────────────────────────────────
-// 出现在 [...] 执行器列表中：
-//   PumpSell(amount: 100%)   带参数调用
-//   Done                     零参数调用（无括号语法糖）
-//   let peak = PumpPrice     序列内赋值
+// 出现在 [...] 执行器列表中的统一执行单元：
+//   PumpSell(amount: 100%)                     带参数执行器
+//   Done                                       零参数执行器（无括号语法糖）
+//   let peak = PumpPrice                       序列内赋值
+//   CompetitorBought => [PumpSell(50%)]        条件化执行块（函数调用形式条件）
+//   let x = Cond(...) => [PumpSell(50%)]       带 let 绑定的条件化执行块
+//
+// 条件化分支必须放在普通 CallExpr / Ident 之前：
+//   LR(1) 在读取 CallExpr 后，若 lookahead 为 "=>" 则走 CondExec（shift），
+//   若为 "," / "]" 则走 Executor（reduce）。因为 "=>" 不在 ExecutorItem 的
+//   FOLLOW 集 {",", "]"} 中，LR(1) 无歧义，LALRPOP 能正确解析。
 
 ExecutorItem: ExecutorItem = {
-    // 序列内解构赋值：let (a, b) = expr（优先于单变量赋值，避免歧义）
+    // ── let 绑定条件化执行：let x = Cond(...) => [execs] ─────────────────────
+    // 优先于普通 let 赋值，避免 "let n = CallExpr" 被 LetAssign 先匹配
+    "let" "(" <t: DestructureTargetList> ")" "=" <c: CallExpr> "=>" "[" <e: CommaList<ExecutorItem>> "]" => {
+        ExecutorItem::CondExec {
+            condition: Condition::LetBound { targets: t, inner: Box::new(Condition::Call(c)) },
+            executors: e,
+        }
+    },
+    "let" <n: Ident> "=" <c: CallExpr> "=>" "[" <e: CommaList<ExecutorItem>> "]" => {
+        ExecutorItem::CondExec {
+            condition: Condition::LetBound { targets: vec![Some(n.to_string())], inner: Box::new(Condition::Call(c)) },
+            executors: e,
+        }
+    },
+
+    // ── 普通 let 赋值（无 =>）────────────────────────────────────────────────
     "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => ExecutorItem::LetDestructure {
         targets, value: val,
     },
-    // 序列内变量赋值（优先于普通 Ident，避免歧义）
     "let" <name: Ident> "=" <val: Expr> => ExecutorItem::LetAssign {
         var_name: name.to_string(),
         value: val,
     },
-    // 带参数调用：PumpSell(amount: 100%)
+
+    // ── 条件化执行：Cond(...) => [execs] ─────────────────────────────────────
+    // lookahead "=>" → CondExec；lookahead ","/"}" → Executor
+    <c: CallExpr> "=>" "[" <e: CommaList<ExecutorItem>> "]" => ExecutorItem::CondExec {
+        condition: Condition::Call(c),
+        executors: e,
+    },
+    <n: Ident> "=>" "[" <e: CommaList<ExecutorItem>> "]" => ExecutorItem::CondExec {
+        condition: Condition::Call(CallExpr { name: SymbolRef::new(n), args: vec![] }),
+        executors: e,
+    },
+
+    // ── 普通执行器（无条件）──────────────────────────────────────────────────
     <call: CallExpr> => ExecutorItem::Executor(ExecutorCall {
         executor: call.name,
         args: call.args.into_iter().map(|a| (a.name, a.value)).collect(),
     }),
-    // 零参数调用（无括号）：Done
-    // 注：必须在 CallExpr 之后，LALR(1) 通过后续 token 区分
     <name: Ident> => ExecutorItem::Executor(ExecutorCall {
         executor: SymbolRef::new(name),
         args: HashMap::new(),

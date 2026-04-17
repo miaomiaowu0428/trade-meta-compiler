@@ -155,9 +155,9 @@ pub enum Statement {
         executors: Vec<ExecutorItem>,
     },
 
-    /// 后台派生：`Spawn[exec1, exec2, ...],`
+    /// 后台派生：`Spawn[item1, item2, ...],`
     ///
-    /// 将给定的执行器序列展开到后台 task 中依次运行。
+    /// items 与普通执行器列表 `[...]` 完全一致（`ExecutorItem` 已统一支持条件化执行块）。
     /// 共享同一个 `TradeTaskContext`，Done 信号自动传播。
     Spawn { items: Vec<ExecutorItem> },
 }
@@ -240,6 +240,9 @@ pub enum BinOp {
 ///
 /// 出现在 `[...]` 执行器列表中。`Done` 不是特殊关键字，
 /// 而是一个零参数的已注册 Executor 符号，解释器按名称识别并传播 "done" 信号。
+///
+/// 统一支持条件化执行（`condition => [execs]`），任何接受 `ExecutorItem`
+/// 的地方均可使用，无需额外中间类型（如 `SpawnItem`）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExecutorItem {
     /// 执行器调用（包含带参数的，也包含零参数的如 Done）
@@ -250,6 +253,14 @@ pub enum ExecutorItem {
     LetDestructure {
         targets: Vec<Option<String>>,
         value: DataExpr,
+    },
+    /// 条件化执行：`condition => [exec1, exec2, ...]`
+    ///
+    /// 可在任何 `[...]` 执行器列表中使用，condition 为函数调用形式
+    /// （含 LetBound：`let x = Cond(...) => [...]`）。
+    CondExec {
+        condition: Condition,
+        executors: Vec<ExecutorItem>,
     },
 }
 

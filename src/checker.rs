@@ -260,7 +260,6 @@ impl Checker {
                     self.check_executor_call(call)?;
                 }
                 ExecutorItem::LetAssign { var_name, value } => {
-                    // 序列内赋值，要求变量已在 vars 中声明
                     let var_type = self.var_types.get(var_name).ok_or_else(|| {
                         CheckError::UndeclaredVariable {
                             name: var_name.clone(),
@@ -277,6 +276,13 @@ impl Checker {
                 }
                 ExecutorItem::LetDestructure { targets, value } => {
                     self.check_destructure_targets(targets, value)?;
+                }
+                ExecutorItem::CondExec {
+                    condition,
+                    executors,
+                } => {
+                    self.check_condition(condition)?;
+                    self.check_executor_sequence(executors)?;
                 }
             }
         }
@@ -661,6 +667,17 @@ impl Checker {
             }
             ExecutorItem::LetDestructure { value, .. } => {
                 self.check_expr_ctx(value, tracker)?;
+            }
+            ExecutorItem::CondExec {
+                condition,
+                executors,
+            } => {
+                self.check_condition_ctx(condition, tracker)?;
+                // 条件化分支内的 context 变更不传播到外层（独立分支语义）
+                let mut branch = tracker.clone();
+                for exec in executors {
+                    self.check_exec_item_ctx(exec, &mut branch)?;
+                }
             }
         }
         Ok(())
