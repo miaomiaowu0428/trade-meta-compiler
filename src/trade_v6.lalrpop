@@ -256,6 +256,14 @@ Condition: Condition = {
     },
     // 序列条件：Do[exec1, exec2, ...]，顺序跑完执行器序列后返回 true
     "Do" "[" <items: CommaList<ExecutorItem>> "]" => Condition::Seq { items },
+    // let 绑定（解构）：let (a, b) = CondCall(...)
+    "let" "(" <targets: DestructureTargetList> ")" "=" <call: CallExpr> => Condition::LetBound {
+        targets, inner: Box::new(Condition::Call(call))
+    },
+    // let 绑定（单变量）：let x = CondCall(...)
+    "let" <name: Ident> "=" <call: CallExpr> => Condition::LetBound {
+        targets: vec![Some(name.to_string())], inner: Box::new(Condition::Call(call))
+    },
     <l: Expr> ">=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ge, right: r },
     <l: Expr> "<=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Le, right: r },
     <l: Expr> ">"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Gt, right: r },

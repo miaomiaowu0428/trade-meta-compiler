@@ -181,6 +181,14 @@ pub enum Condition {
     },
     /// 序列条件：Do[exec1, exec2, ...] — 顺序执行完成后返回 true
     Seq { items: Vec<ExecutorItem> },
+    /// Let 绑定条件：`let x = Cond(...)` 或 `let (a, b) = Cond(...)`
+    ///
+    /// condition 触发（返回 true）时，将偏值解构绑定到 targets；
+    /// 包裹在 OneOf 内时，落败一侧的 targets 会预初始化为 Uninit。
+    LetBound {
+        targets: Vec<Option<String>>,
+        inner: Box<Condition>,
+    },
     /// 默认条件 _
     Default,
 }
@@ -225,7 +233,7 @@ pub enum BinOp {
     Mul, // *
     Div, // /
     /// Uninit 回退：左侧为 Uninit 时取右侧值，否则取左侧值（类似 `??` 运算符）
-    Or,  // OR
+    Or, // OR
 }
 
 /// 执行器序列项（V6.0 新设计）

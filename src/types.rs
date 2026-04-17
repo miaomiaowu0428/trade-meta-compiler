@@ -165,7 +165,7 @@ pub enum BinOp {
     Mul, // *
     Div, // /
     /// Uninit 回退
-    Or,  // OR
+    Or, // OR
 }
 
 #[cfg(test)]

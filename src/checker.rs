@@ -342,6 +342,18 @@ impl Checker {
                 // V6.0: 函数调用形式的条件
                 self.check_call_expr(call_expr, SymbolCategory::Condition)?;
             }
+            Condition::LetBound { targets, inner } => {
+                // 检查内部条件
+                self.check_condition(inner)?;
+                // 目标变量必须在 vars 中声明（_ 除外）
+                for target in targets {
+                    if let Some(name) = target {
+                        if !self.var_types.contains_key(name) {
+                            return Err(CheckError::UndeclaredVariable { name: name.clone() });
+                        }
+                    }
+                }
+            }
             Condition::Combinator { name, conditions } => {
                 // 验证组合子符号已注册
                 if self
@@ -406,7 +418,7 @@ impl Checker {
                     BinOp::Sub => crate::types::BinOp::Sub,
                     BinOp::Mul => crate::types::BinOp::Mul,
                     BinOp::Div => crate::types::BinOp::Div,
-                    BinOp::Or  => crate::types::BinOp::Or,
+                    BinOp::Or => crate::types::BinOp::Or,
                 };
 
                 TypeChecker::check_binary_op(&left_ty, bin_op, &right_ty).ok_or_else(|| {
@@ -682,6 +694,9 @@ impl Checker {
                 for item in items {
                     self.check_exec_item_ctx(item, tracker)?;
                 }
+            }
+            Condition::LetBound { inner, .. } => {
+                self.check_condition_ctx(inner, tracker)?;
             }
             Condition::Default => {}
         }
