@@ -35,7 +35,7 @@ pub use builtin_symbols::builtin_symbol_registry;
 pub use checker::Checker;
 pub use error::{CheckError, CheckResult};
 pub use inventory;
-pub use runtime_value::RuntimeValue;
+pub use runtime_value::{RuntimeValue, TaskValue};
 pub use symbol_table::{
     ContextInteraction, ContextOp, ParamSpec, SymbolCategory, SymbolFactory, SymbolMetadata,
     SymbolRegistry, TypeAliasDef, TypeAliasFactory, UnitDef,

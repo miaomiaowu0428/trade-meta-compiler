@@ -3,7 +3,24 @@
 //! 定义在 checker-core 中，供 interpreter crate 使用，避免跨 crate 重复定义。
 //! 每个 variant 与 TypeSpec 一一对应，便于 validate_against 做类型验证。
 
+use std::any::Any;
+use std::sync::Arc;
+
 use crate::TypeSpec;
+
+/// 可传递的任务值：携带一个已组装好的待 spawn 任务。
+///
+/// 内层为 `Arc<dyn Any + Send + Sync>`，由 pipeline 构造为具体的 `PreparedSpawnTask`
+/// 类型，由 `Spawn` 执行器 handler 通过 `Arc::downcast` 还原并执行。
+/// 这层类型擦除使得 `trade-meta-compiler` 不必依赖 tokio / futures。
+#[derive(Clone)]
+pub struct TaskValue(pub Arc<dyn Any + Send + Sync>);
+
+impl std::fmt::Debug for TaskValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Task")
+    }
+}
 
 /// 运行时值：DSL 变量和表达式在解释器中的实际值
 #[derive(Debug, Clone)]
@@ -24,6 +41,8 @@ pub enum RuntimeValue {
     Unit,
     /// 未初始化（buy 失败时解构变量的默认值）
     Uninit,
+    /// 已组装好的后台任务（由 `Spawn[...]` 语法构造，交给 Spawn 执行器 handler 派发）
+    Task(TaskValue),
 }
 
 impl Default for RuntimeValue {
@@ -72,6 +91,7 @@ impl RuntimeValue {
             }
             Self::Unit => TypeSpec::Any,
             Self::Uninit => TypeSpec::Any,
+            Self::Task(_) => TypeSpec::Any,
         }
     }
 }

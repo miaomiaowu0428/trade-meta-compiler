@@ -21,10 +21,11 @@ use crate::types::TypeSpec;
 /// | 符号      | 类别      | 说明                                                 |
 /// |-----------|-----------|------------------------------------------------------|
 /// | `Done`  | Executor  | 终止当前 sell 序列，触发 Done 信号                   |
+/// | `Spawn` | Executor  | 后台派生任务；pipeline 将 `Spawn[...]` 括号内的序列  |
+/// |         |           | 组装为 `RuntimeValue::Task` 作为 `task` 参数传入     |
 /// | `All`   | Condition | 条件组合子：并发评估全部为 true 才通过               |
 /// | `OneOf` | Condition | 条件组合子：并发竞争，任意一个 true 即通过           |
 ///
-/// `Spawn` 是语句级关键字，由 pipeline 直接处理。
 /// `[...]` 内联序列条件由 grammar 直接映射，不在符号表中。
 pub fn builtin_symbol_registry() -> SymbolRegistry {
     let mut r = SymbolRegistry::new();
@@ -42,6 +43,18 @@ fn builtin_symbols() -> Vec<SymbolMetadata> {
             returns: None,
             category: SymbolCategory::Executor,
             params: vec![],
+            contexts: vec![],
+        },
+        SymbolMetadata {
+            name: "Spawn",
+            returns: None,
+            category: SymbolCategory::Executor,
+            // `task` 由 pipeline 为 `Spawn[...]` 自动构造；用户语法不显式写出。
+            params: vec![ParamSpec {
+                name: "task",
+                allowed_types: vec![TypeSpec::Any],
+                required: false,
+            }],
             contexts: vec![],
         },
         // ── 条件组合子 ───────────────────────────────────────────────────────
