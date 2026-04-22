@@ -61,6 +61,8 @@ pub struct MonitorBlock {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriggerBody {
     pub buy: Vec<Statement>,
+    /// buy 失败（is_done）时执行，不进入 sell 阶段
+    pub buy_else: Vec<Statement>,
     pub sell: Vec<Statement>,
     /// 兜底执行器序列（sell 执行完毕后，不论 Done 还是顺序结束，都执行此块）
     pub sell_finally: Vec<ExecutorItem>,

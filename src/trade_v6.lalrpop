@@ -34,6 +34,7 @@ match {
     "monitor",
     "buy",
     "sell",
+    "else",
     "let",
     "_",
     "true",
@@ -153,13 +154,21 @@ MonitorBlock: MonitorBlock = {
 };
 
 TriggerBody: TriggerBody = {
-    // 有 finally 块：buy [...] sell [...] => [...]
-    "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
-        TriggerBody { buy, sell, sell_finally: finally }
+    // buy [...] else [...] sell [...] => [...]
+    "buy" ":" "[" <buy: CommaList<Statement>> "]" "else" "[" <buy_else: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
+        TriggerBody { buy, buy_else, sell, sell_finally: finally }
     },
-    // 无 finally 块
+    // buy [...] else [...] sell [...]
+    "buy" ":" "[" <buy: CommaList<Statement>> "]" "else" "[" <buy_else: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
+        TriggerBody { buy, buy_else, sell, sell_finally: vec![] }
+    },
+    // buy [...] sell [...] => [...]
+    "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
+        TriggerBody { buy, buy_else: vec![], sell, sell_finally: finally }
+    },
+    // buy [...] sell [...]
     "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
-        TriggerBody { buy, sell, sell_finally: vec![] }
+        TriggerBody { buy, buy_else: vec![], sell, sell_finally: vec![] }
     },
 };
 
