@@ -457,6 +457,14 @@ impl Checker {
                     CheckError::Custom(format!("'{}' has no return type", call.name.name))
                 })
             }
+            DataExpr::List(exprs) => {
+                let elem = exprs
+                    .first()
+                    .map(|e| self.infer_expr_type(e))
+                    .transpose()?
+                    .unwrap_or(TypeSpec::Any);
+                Ok(TypeSpec::List(Box::new(elem)))
+            }
             DataExpr::Tuple(exprs) => {
                 let types: Vec<TypeSpec> = exprs
                     .iter()
@@ -750,6 +758,11 @@ impl Checker {
             DataExpr::Literal(_) => {}
             DataExpr::Call(call) => {
                 self.check_data_expr_call_ctx(call, tracker)?;
+            }
+            DataExpr::List(exprs) => {
+                for e in exprs {
+                    self.check_expr_ctx(e, tracker)?;
+                }
             }
             DataExpr::Tuple(exprs) => {
                 for e in exprs {

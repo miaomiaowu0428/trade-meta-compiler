@@ -223,6 +223,8 @@ pub enum DataExpr {
     },
     /// 函数调用表达式
     Call(CallExpr),
+    /// 列表表达式：[expr1, expr2, ...]
+    List(Vec<DataExpr>),
     /// 元组表达式：(expr1, expr2, ...)
     Tuple(Vec<DataExpr>),
 }

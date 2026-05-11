@@ -341,7 +341,7 @@ ExprAtom: DataExpr = {
     <call: CallExpr> => DataExpr::Call(call),
     <n: NumVal>   => DataExpr::Literal(Value::Number(n)),
     <s: StrVal>   => DataExpr::Literal(Value::String(s)),
-    <lst: StringList> => DataExpr::Literal(Value::List(lst)),
+    <lst: ExprList> => DataExpr::List(lst),
     <p: PercentVal>   => DataExpr::Literal(Value::Percent(p)),
     <d: DurationVal>  => DataExpr::Literal(Value::Duration(d)),
     <a: AmountVal>    => DataExpr::Literal(Value::Amount(a.0, a.1)),
@@ -357,6 +357,10 @@ ExprAtom: DataExpr = {
     },
     // 括号表达式：(expr)
     "(" <e: Expr> ")" => e,
+};
+
+ExprList: Vec<DataExpr> = {
+    "[" <lst: CommaList<Expr>> "]" => lst,
 };
 
 // ─── 解构目标列表 ────────────────────────────────────────────────────────────
@@ -387,10 +391,6 @@ CurrencyUnit: String = {
     "SOL" => "SOL".to_string(),
 };
 Bool: bool  = { "true" => true, "false" => false };
-
-StringList: Vec<Value> = {
-    "[" <lst: CommaList<StrVal>> "]" => lst.into_iter().map(Value::String).collect(),
-};
 
 StrVal: String = {
     <s: StringLiteral> => {
