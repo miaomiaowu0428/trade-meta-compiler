@@ -6,7 +6,6 @@
 //   - 通用分支调用语法：SymbolName[cond => [execs], ...]
 //   - 执行器列表中允许零参数符号（如 Done）不带括号
 
-use std::collections::HashMap;
 use crate::ast::*;
 
 grammar;
@@ -156,19 +155,19 @@ MonitorBlock: MonitorBlock = {
 
 TriggerBody: TriggerBody = {
     // buy [...] else [...] sell [...] => [...]
-    "buy" ":" "[" <buy: CommaList<Statement>> "]" "else" "[" <buy_else: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
+    "buy" ":" "[" <buy: BlockList> "]" "else" "[" <buy_else: BlockList> "]" "," "sell" ":" "[" <sell: BlockList> "]" "=>" "[" <finally: BlockList> "]" => {
         TriggerBody { buy, buy_else, sell, sell_finally: finally }
     },
     // buy [...] else [...] sell [...]
-    "buy" ":" "[" <buy: CommaList<Statement>> "]" "else" "[" <buy_else: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
+    "buy" ":" "[" <buy: BlockList> "]" "else" "[" <buy_else: BlockList> "]" "," "sell" ":" "[" <sell: BlockList> "]" => {
         TriggerBody { buy, buy_else, sell, sell_finally: vec![] }
     },
     // buy [...] sell [...] => [...]
-    "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" "=>" "[" <finally: CommaList<ExecutorItem>> "]" => {
+    "buy" ":" "[" <buy: BlockList> "]" "," "sell" ":" "[" <sell: BlockList> "]" "=>" "[" <finally: BlockList> "]" => {
         TriggerBody { buy, buy_else: vec![], sell, sell_finally: finally }
     },
     // buy [...] sell [...]
-    "buy" ":" "[" <buy: CommaList<Statement>> "]" "," "sell" ":" "[" <sell: CommaList<Statement>> "]" => {
+    "buy" ":" "[" <buy: BlockList> "]" "," "sell" ":" "[" <sell: BlockList> "]" => {
         TriggerBody { buy, buy_else: vec![], sell, sell_finally: vec![] }
     },
 };
@@ -192,101 +191,82 @@ ArgValExpr: DataExpr = {
     <e: Expr> => e,
 };
 
-// ─── Statement ───────────────────────────────────────────────────────────────
-
-Statement: Statement = {
-    // ── Spawn：后台派生  Spawn[item1, item2, ...] ─────────────────────────
-    // Spawn 为关键字，不经过 ControlFlow handler，pipeline 直接处理
-    // ExecutorItem 已统一支持 condition => [execs]，无需额外包装
-    "Spawn" "[" <items: CommaList<ExecutorItem>> "]" => {
-        Statement::Spawn { items }
-    },
-
-
-    // ── let 解构赋值：let (a, b) = expr ──────────────────────────────
-    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => {
-        Statement::LetDestructure { targets, value: val }
-    },
-
-    // ── let 表达式赋值：let x = expr  ───────────────────────────────────────
-    // 包括 let x = Symbol(arg: val) —— CallExpr 作为 Expr 的一部分
-    "let" <name: Ident> "=" <val: Expr> => {
-        Statement::LetAssign { var_name: name.to_string(), value: val }
-    },
-
-    // ── 条件 => [执行器列表]  ────────────────────────────────────────────────
-    <cond: Condition> "=>" "[" <execs: CommaList<ExecutorItem>> "]" => {
-        Statement::ConditionExec { condition: cond, executors: execs }
-    },
-
-
-    // ── 直接符号调用（无条件）：PumpSell(amount: 100%)  ──────────────────────
-    <call: CallExpr> => Statement::Executor { call },
-
-    // ── 无参数符号调用（无括号）：LogContext  ────────────────────────────────
-    <name: Ident> => Statement::Executor {
-        call: CallExpr { name: SymbolRef::new(name), args: vec![] }
-    },
-};
-
-// ─── ExecutorItem ────────────────────────────────────────────────────────────
-// 出现在 [...] 执行器列表中的统一执行单元：
-//   PumpSell(amount: 100%)                     带参数执行器
-//   Done                                       零参数执行器（无括号语法糖）
-//   let peak = PumpPrice                       序列内赋值
-//   CompetitorBought => [PumpSell(50%)]        条件化执行块（函数调用形式条件）
-//   let x = Cond(...) => [PumpSell(50%)]       带 let 绑定的条件化执行块
+// ─── BlockItem ───────────────────────────────────────────────────────────────
+// 所有 [...] 代码块中的统一执行单元：buy / sell / condition 右侧 / Spawn / Do / finally。
 //
 // 条件化分支必须放在普通 CallExpr / Ident 之前：
-//   LR(1) 在读取 CallExpr 后，若 lookahead 为 "=>" 则走 CondExec（shift），
-//   若为 "," / "]" 则走 Executor（reduce）。因为 "=>" 不在 ExecutorItem 的
+//   LR(1) 在读取 CallExpr 后，若 lookahead 为 "=>" 则走 CondExec；
+//   若为 "," / "]" 则走 Executor。因为 "=>" 不在 BlockItem 的
 //   FOLLOW 集 {",", "]"} 中，LR(1) 无歧义，LALRPOP 能正确解析。
 
-ExecutorItem: ExecutorItem = {
-    // ── let 绑定条件化执行：let x = Cond(...) => [execs] ─────────────────────
+BlockItem: BlockItem = {
+    // ── Spawn：后台派生  Spawn[item1, item2, ...] ─────────────────────────
+    "Spawn" "[" <items: BlockList> "]" => {
+        BlockItem::Spawn { items }
+    },
+
+    // ── let 绑定条件化执行：let x = Cond(...) => [items] ───────────────────
     // 优先于普通 let 赋值，避免 "let n = CallExpr" 被 LetAssign 先匹配
-    "let" "(" <t: DestructureTargetList> ")" "=" <c: CallExpr> "=>" "[" <e: CommaList<ExecutorItem>> "]" => {
-        ExecutorItem::CondExec {
+    "let" "(" <t: DestructureTargetList> ")" "=" <c: CallExpr> "=>" "[" <body: BlockList> "]" => {
+        BlockItem::CondExec {
             condition: Condition::LetBound { targets: t, inner: Box::new(Condition::Call(c)) },
-            executors: e,
+            body,
         }
     },
-    "let" <n: Ident> "=" <c: CallExpr> "=>" "[" <e: CommaList<ExecutorItem>> "]" => {
-        ExecutorItem::CondExec {
+    "let" <n: Ident> "=" <c: CallExpr> "=>" "[" <body: BlockList> "]" => {
+        BlockItem::CondExec {
             condition: Condition::LetBound { targets: vec![Some(n.to_string())], inner: Box::new(Condition::Call(c)) },
-            executors: e,
+            body,
         }
     },
 
     // ── 普通 let 赋值（无 =>）────────────────────────────────────────────────
-    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => ExecutorItem::LetDestructure {
+    "let" "(" <targets: DestructureTargetList> ")" "=" <val: Expr> => BlockItem::LetDestructure {
         targets, value: val,
     },
-    "let" <name: Ident> "=" <val: Expr> => ExecutorItem::LetAssign {
+    "let" <name: Ident> "=" <val: Expr> => BlockItem::LetAssign {
         var_name: name.to_string(),
         value: val,
     },
 
-    // ── 条件化执行：Cond(...) => [execs] ─────────────────────────────────────
-    // lookahead "=>" → CondExec；lookahead ","/"}" → Executor
-    <c: CallExpr> "=>" "[" <e: CommaList<ExecutorItem>> "]" => ExecutorItem::CondExec {
-        condition: Condition::Call(c),
-        executors: e,
-    },
-    <n: Ident> "=>" "[" <e: CommaList<ExecutorItem>> "]" => ExecutorItem::CondExec {
-        condition: Condition::Call(CallExpr { name: SymbolRef::new(n), args: vec![] }),
-        executors: e,
+    // ── 条件化执行：任意块条件 => [items] ──────────────────────────────────
+    <cond: BlockCondition> "=>" "[" <body: BlockList> "]" => BlockItem::CondExec {
+        condition: cond,
+        body,
     },
 
     // ── 普通执行器（无条件）──────────────────────────────────────────────────
-    <call: CallExpr> => ExecutorItem::Executor(ExecutorCall {
-        executor: call.name,
-        args: call.args.into_iter().map(|a| (a.name, a.value)).collect(),
-    }),
-    <name: Ident> => ExecutorItem::Executor(ExecutorCall {
-        executor: SymbolRef::new(name),
-        args: HashMap::new(),
-    }),
+    <call: CallExpr> => BlockItem::Executor { call },
+    <name: Ident> => BlockItem::Executor {
+        call: CallExpr { name: SymbolRef::new(name), args: vec![] }
+    },
+};
+
+BlockList: Vec<BlockItem> = {
+    => vec![],
+    <first: BlockItem> <rest: ("," <BlockItem>)*> ","? => {
+        let mut v = vec![first];
+        v.extend(rest);
+        v
+    },
+};
+
+// 块分支左侧条件：排除 `let x = Cond(...)`，该形式由 BlockItem 的显式规则处理，
+// 避免 LALR(1) 在 `let x = CallExpr => [...]` 上出现 shift/reduce 冲突。
+BlockCondition: Condition = {
+    <name: Ident> "[" <conds: CommaList<Condition>> "]" => Condition::Combinator {
+        name: name.to_string(), conditions: conds
+    },
+    "Do" "[" <items: BlockList> "]" => Condition::Seq { items },
+    <l: Expr> ">=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ge, right: r },
+    <l: Expr> "<=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Le, right: r },
+    <l: Expr> ">"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Gt, right: r },
+    <l: Expr> "<"  <r: Expr> => Condition::Compare { left: l, op: CompareOp::Lt, right: r },
+    <l: Expr> "==" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Eq, right: r },
+    <l: Expr> "!=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ne, right: r },
+    <call: CallExpr>         => Condition::Call(call),
+    <name: Ident>            => Condition::Call(CallExpr { name: SymbolRef::new(name), args: vec![] }),
+    "_"                      => Condition::Default,
 };
 
 // ─── Condition ───────────────────────────────────────────────────────────────
@@ -296,8 +276,8 @@ Condition: Condition = {
     <name: Ident> "[" <conds: CommaList<Condition>> "]" => Condition::Combinator {
         name: name.to_string(), conditions: conds
     },
-    // 序列条件：Do[exec1, exec2, ...]，顺序跑完执行器序列后返回 true
-    "Do" "[" <items: CommaList<ExecutorItem>> "]" => Condition::Seq { items },
+    // 序列条件：Do[item1, item2, ...]，顺序跑完执行序列后返回 true
+    "Do" "[" <items: BlockList> "]" => Condition::Seq { items },
     // let 绑定（解构）：let (a, b) = CondCall(...)
     "let" "(" <targets: DestructureTargetList> ")" "=" <call: CallExpr> => Condition::LetBound {
         targets, inner: Box::new(Condition::Call(call))
@@ -313,6 +293,7 @@ Condition: Condition = {
     <l: Expr> "==" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Eq, right: r },
     <l: Expr> "!=" <r: Expr> => Condition::Compare { left: l, op: CompareOp::Ne, right: r },
     <call: CallExpr>         => Condition::Call(call),
+    <name: Ident>            => Condition::Call(CallExpr { name: SymbolRef::new(name), args: vec![] }),
     "_"                      => Condition::Default,
 };
 

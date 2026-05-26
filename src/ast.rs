@@ -60,12 +60,12 @@ pub struct MonitorBlock {
 /// 触发后的交易流程：buy → sell → finally
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriggerBody {
-    pub buy: Vec<Statement>,
+    pub buy: Vec<BlockItem>,
     /// buy 失败（is_done）时执行，不进入 sell 阶段
-    pub buy_else: Vec<Statement>,
-    pub sell: Vec<Statement>,
-    /// 兜底执行器序列（sell 执行完毕后，不论 Done 还是顺序结束，都执行此块）
-    pub sell_finally: Vec<ExecutorItem>,
+    pub buy_else: Vec<BlockItem>,
+    pub sell: Vec<BlockItem>,
+    /// 兜底执行序列（sell 执行完毕后，不论 Done 还是顺序结束，都执行此块）
+    pub sell_finally: Vec<BlockItem>,
 }
 
 impl From<TriggerBody> for MonitorBlock {
@@ -133,9 +133,12 @@ pub enum VarType {
     Address,
 }
 
-/// 语句（V6.0 重新设计）
+/// 统一块语句（V6.0）
+///
+/// 所有 `[...]` 代码块都使用同一种 item：buy / sell / condition 右侧 /
+/// Spawn / Do / finally。这样不会出现“外层能写、内层不能写”的语法割裂。
 #[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
+pub enum BlockItem {
     /// Let 赋值：`let var = expr,`
     /// 强制要求变量必须在 vars 中预先声明
     LetAssign { var_name: String, value: DataExpr },
@@ -149,20 +152,19 @@ pub enum Statement {
         value: DataExpr,
     },
 
-    /// 直接执行器（无条件）：`AnySymbol(...),`
+    /// 直接执行器（无条件）：`AnySymbol(...)` / `Done`
     Executor { call: CallExpr },
 
-    /// 条件执行：`condition => [executors],`
-    ConditionExec {
+    /// 条件执行：`condition => [items]`
+    CondExec {
         condition: Condition,
-        executors: Vec<ExecutorItem>,
+        body: Vec<BlockItem>,
     },
 
-    /// 后台派生：`Spawn[item1, item2, ...],`
+    /// 后台派生：`Spawn[item1, item2, ...]`
     ///
-    /// items 与普通执行器列表 `[...]` 完全一致（`ExecutorItem` 已统一支持条件化执行块）。
-    /// 共享同一个 `TradeTaskContext`，Done 信号自动传播。
-    Spawn { items: Vec<ExecutorItem> },
+    /// 共享父 `TradeTaskContext` 的 vars / contexts，但运行时使用 child cancel token。
+    Spawn { items: Vec<BlockItem> },
 }
 
 /// 条件
@@ -182,8 +184,8 @@ pub enum Condition {
         name: String,
         conditions: Vec<Condition>,
     },
-    /// 序列条件：Do[exec1, exec2, ...] — 顺序执行完成后返回 true
-    Seq { items: Vec<ExecutorItem> },
+    /// 序列条件：Do[item1, item2, ...] — 顺序执行完成后返回 true
+    Seq { items: Vec<BlockItem> },
     /// Let 绑定条件：`let x = Cond(...)` 或 `let (a, b) = Cond(...)`
     ///
     /// condition 触发（返回 true）时，将偏值解构绑定到 targets；
@@ -241,48 +243,11 @@ pub enum BinOp {
     Or, // OR
 }
 
-/// 执行器序列项（V6.0 新设计）
-///
-/// 出现在 `[...]` 执行器列表中。`Done` 不是特殊关键字，
-/// 而是一个零参数的已注册 Executor 符号，解释器按名称识别并传播 "done" 信号。
-///
-/// 统一支持条件化执行（`condition => [execs]`），任何接受 `ExecutorItem`
-/// 的地方均可使用，无需额外中间类型（如 `SpawnItem`）。
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExecutorItem {
-    /// 执行器调用（包含带参数的，也包含零参数的如 Done）
-    Executor(ExecutorCall),
-    /// 序列内变量赋值：`let peak = PumpPrice`
-    LetAssign { var_name: String, value: DataExpr },
-    /// 序列内解构赋值：`let (a, b) = expr`
-    LetDestructure {
-        targets: Vec<Option<String>>,
-        value: DataExpr,
-    },
-    /// 条件化执行：`condition => [exec1, exec2, ...]`
-    ///
-    /// 可在任何 `[...]` 执行器列表中使用，condition 为函数调用形式
-    /// （含 LetBound：`let x = Cond(...) => [...]`）。
-    CondExec {
-        condition: Condition,
-        executors: Vec<ExecutorItem>,
-    },
-}
-
-/// 操作符（执行器序列）
+/// 操作符（块序列）
 #[derive(Debug, Clone, PartialEq)]
 pub struct Operator {
-    /// 执行器序列：[Executor1, Executor2, Done]
-    pub items: Vec<ExecutorItem>,
-}
-
-/// 执行器调用（通用）
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExecutorCall {
-    /// 执行器符号
-    pub executor: SymbolRef,
-    /// 参数
-    pub args: HashMap<String, DataExpr>,
+    /// 执行序列：[Executor1, Executor2, Done]
+    pub items: Vec<BlockItem>,
 }
 
 /// 值类型

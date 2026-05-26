@@ -41,19 +41,19 @@ impl Checker {
         // 检查 Monitor 调用
         self.check_call_expr(&monitor.monitor_call, SymbolCategory::Monitor)?;
 
-        // 检查 buy（与 sell 使用完全一致的 Statement 检查）
+        // 检查 buy（与 sell 使用完全一致的 BlockItem 检查）
         for stmt in &monitor.on_trigger.buy {
-            self.check_statement(stmt)?;
+            self.check_block_item(stmt)?;
         }
 
         // 检查 sell 语句列表
         for stmt in &monitor.on_trigger.sell {
-            self.check_statement(stmt)?;
+            self.check_block_item(stmt)?;
         }
 
-        // 检查 sell_finally 执行器序列（兑底块）
+        // 检查 sell_finally 执行序列（兜底块）
         if !monitor.on_trigger.sell_finally.is_empty() {
-            self.check_executor_sequence(&monitor.on_trigger.sell_finally)?;
+            self.check_block_sequence(&monitor.on_trigger.sell_finally)?;
         }
 
         Ok(())
@@ -133,66 +133,74 @@ impl Checker {
         Ok(())
     }
 
-    /// 检查语句（V6.0 新增）
-    fn check_statement(&self, stmt: &Statement) -> CheckResult<()> {
-        match stmt {
-            Statement::LetAssign { var_name, value } => {
-                // 检查变量是否声明
-                let var_type =
-                    self.var_types
-                        .get(var_name)
-                        .ok_or_else(|| CheckError::UndeclaredVariable {
-                            name: var_name.clone(),
-                        })?;
-
-                // 检查值的类型
-                let value_type = self.infer_expr_type(value)?;
-                if !TypeChecker::is_compatible(var_type, &value_type) {
-                    return Err(CheckError::VariableTypeMismatch {
-                        name: var_name.clone(),
-                        expected: var_type.clone(),
-                        actual: value_type,
-                    });
-                }
+    /// 检查统一块语句
+    fn check_block_item(&self, item: &BlockItem) -> CheckResult<()> {
+        match item {
+            BlockItem::LetAssign { var_name, value } => {
+                self.check_let_assign(var_name, value)?;
             }
-            Statement::Executor { call } => {
-                // 通用执行器，先尝试 Executor 分类，再 fallback 到 DataItem
-                let in_executor = self
-                    .registry
-                    .lookup(&call.name.name, SymbolCategory::Executor)
-                    .is_some();
-                if in_executor {
-                    self.check_call_expr(call, SymbolCategory::Executor)?;
-                } else {
-                    // DataItem 作为顶层语句调用（如展示理用） —— 変量存在就通过
-                    let in_data = self
-                        .registry
-                        .lookup(&call.name.name, SymbolCategory::DataItem)
-                        .is_some();
-                    if !in_data {
-                        return Err(CheckError::UndefinedSymbol {
-                            name: call.name.name.clone(),
-                            category: SymbolCategory::Executor,
-                        });
-                    }
-                }
-            }
-            Statement::Spawn { items } => {
-                self.check_executor_sequence(items)?;
-            }
-            Statement::ConditionExec {
-                condition,
-                executors,
-            } => {
-                self.check_condition(condition)?;
-                self.check_executor_sequence(executors)?;
-            }
-
-            Statement::LetDestructure { targets, value } => {
+            BlockItem::LetDestructure { targets, value } => {
                 self.check_destructure_targets(targets, value)?;
+            }
+            BlockItem::Executor { call } => {
+                self.check_executable_call(call)?;
+            }
+            BlockItem::CondExec { condition, body } => {
+                self.check_condition(condition)?;
+                self.check_block_sequence(body)?;
+            }
+            BlockItem::Spawn { items } => {
+                self.check_block_sequence(items)?;
             }
         }
         Ok(())
+    }
+
+    fn check_block_sequence(&self, items: &[BlockItem]) -> CheckResult<()> {
+        for item in items {
+            self.check_block_item(item)?;
+        }
+        Ok(())
+    }
+
+    fn check_let_assign(&self, var_name: &str, value: &DataExpr) -> CheckResult<()> {
+        let var_type =
+            self.var_types
+                .get(var_name)
+                .ok_or_else(|| CheckError::UndeclaredVariable {
+                    name: var_name.to_string(),
+                })?;
+        let value_type = self.infer_expr_type(value)?;
+        if !TypeChecker::is_compatible(var_type, &value_type) {
+            return Err(CheckError::VariableTypeMismatch {
+                name: var_name.to_string(),
+                expected: var_type.clone(),
+                actual: value_type,
+            });
+        }
+        Ok(())
+    }
+
+    /// 检查块内可执行调用：先尝试 Executor，再 fallback 到 DataItem。
+    fn check_executable_call(&self, call: &CallExpr) -> CheckResult<()> {
+        if self
+            .registry
+            .lookup(&call.name.name, SymbolCategory::Executor)
+            .is_some()
+        {
+            self.check_call_expr(call, SymbolCategory::Executor)
+        } else if self
+            .registry
+            .lookup(&call.name.name, SymbolCategory::DataItem)
+            .is_some()
+        {
+            self.check_call_expr(call, SymbolCategory::DataItem)
+        } else {
+            Err(CheckError::UndefinedSymbol {
+                name: call.name.name.clone(),
+                category: SymbolCategory::Executor,
+            })
+        }
     }
 
     /// 检查函数调用表达式（V6.0 新增）
@@ -228,7 +236,20 @@ impl Checker {
 
         // 检查参数类型
         for arg in &call.args {
-            self.infer_expr_type(&arg.value)?;
+            let arg_type = self.infer_expr_type(&arg.value)?;
+            if let Some(param_spec) = meta.params.iter().find(|p| p.name == arg.name) {
+                if !param_spec.accepts_type(&arg_type) {
+                    return Err(CheckError::TypeMismatch {
+                        expected: param_spec.allowed_types[0].clone(),
+                        actual: arg_type,
+                        context: format!(
+                            "{} {} parameter {}",
+                            expected_category, call.name.name, arg.name
+                        ),
+                    });
+                }
+            }
+            // 未知参数不报错，允许额外参数。
         }
 
         Ok(())
@@ -250,84 +271,6 @@ impl Checker {
             };
             self.var_types.insert(var.name.clone(), ty);
         }
-        Ok(())
-    }
-
-    /// 检查执行器序列
-    fn check_executor_sequence(&self, executors: &[ExecutorItem]) -> CheckResult<()> {
-        for item in executors {
-            match item {
-                ExecutorItem::Executor(call) => {
-                    self.check_executor_call(call)?;
-                }
-                ExecutorItem::LetAssign { var_name, value } => {
-                    let var_type = self.var_types.get(var_name).ok_or_else(|| {
-                        CheckError::UndeclaredVariable {
-                            name: var_name.clone(),
-                        }
-                    })?;
-                    let val_type = self.infer_expr_type(value)?;
-                    if !TypeChecker::is_compatible(var_type, &val_type) {
-                        return Err(CheckError::VariableTypeMismatch {
-                            name: var_name.clone(),
-                            expected: var_type.clone(),
-                            actual: val_type,
-                        });
-                    }
-                }
-                ExecutorItem::LetDestructure { targets, value } => {
-                    self.check_destructure_targets(targets, value)?;
-                }
-                ExecutorItem::CondExec {
-                    condition,
-                    executors,
-                } => {
-                    self.check_condition(condition)?;
-                    self.check_executor_sequence(executors)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// 检查执行器调用
-    fn check_executor_call(&self, call: &ExecutorCall) -> CheckResult<()> {
-        let meta = self
-            .registry
-            .lookup(&call.executor.name, SymbolCategory::Executor)
-            .ok_or_else(|| CheckError::UndefinedSymbol {
-                name: call.executor.name.clone(),
-                category: SymbolCategory::Executor,
-            })?;
-
-        // 检查必需参数
-        for param_spec in &meta.params {
-            if param_spec.required && !call.args.contains_key(param_spec.name) {
-                return Err(CheckError::MissingRequiredParam {
-                    executor: call.executor.name.clone(),
-                    param: param_spec.name.to_string(),
-                });
-            }
-        }
-
-        // 检查参数类型
-        for (arg_name, arg_value) in &call.args {
-            let arg_type = self.infer_expr_type(arg_value)?;
-
-            // 查找参数规范
-            if let Some(param_spec) = meta.params.iter().find(|p| p.name == arg_name) {
-                // 检查类型是否匹配（支持多类型参数）
-                if !param_spec.accepts_type(&arg_type) {
-                    return Err(CheckError::TypeMismatch {
-                        expected: param_spec.allowed_types[0].clone(), // 显示第一个期望类型
-                        actual: arg_type,
-                        context: format!("executor {} parameter {}", call.executor.name, arg_name),
-                    });
-                }
-            }
-            // 未知参数不报错，允许额外参数
-        }
-
         Ok(())
     }
 
@@ -378,7 +321,7 @@ impl Checker {
                 }
             }
             Condition::Seq { items } => {
-                self.check_executor_sequence(items)?;
+                self.check_block_sequence(items)?;
             }
             Condition::Default => {}
         }
@@ -534,19 +477,19 @@ impl Checker {
             &mut tracker,
         )?;
 
-        // 2. Buy 阶段（与 sell 完全一致的 Statement 检查）
+        // 2. Buy 阶段（与 sell 完全一致的 BlockItem 检查）
         for stmt in &monitor.on_trigger.buy {
-            self.check_stmt_ctx(stmt, &mut tracker)?;
+            self.check_block_item_ctx(stmt, &mut tracker)?;
         }
 
         // 3. Sell 语句（顺序）
         for stmt in &monitor.on_trigger.sell {
-            self.check_stmt_ctx(stmt, &mut tracker)?;
+            self.check_block_item_ctx(stmt, &mut tracker)?;
         }
 
         // 4. sell_finally
         for item in &monitor.on_trigger.sell_finally {
-            self.check_exec_item_ctx(item, &mut tracker)?;
+            self.check_block_item_ctx(item, &mut tracker)?;
         }
 
         Ok(())
@@ -612,16 +555,19 @@ impl Checker {
         Ok(())
     }
 
-    fn check_stmt_ctx(
+    fn check_block_item_ctx(
         &self,
-        stmt: &Statement,
+        item: &BlockItem,
         tracker: &mut ContextFlowTracker,
     ) -> CheckResult<()> {
-        match stmt {
-            Statement::LetAssign { value, .. } => {
+        match item {
+            BlockItem::LetAssign { value, .. } => {
                 self.check_expr_ctx(value, tracker)?;
             }
-            Statement::Executor { call } => {
+            BlockItem::LetDestructure { value, .. } => {
+                self.check_data_expr_ctx(value, tracker)?;
+            }
+            BlockItem::Executor { call } => {
                 let cat = if self
                     .registry
                     .lookup(&call.name.name, SymbolCategory::Executor)
@@ -634,58 +580,19 @@ impl Checker {
                 self.apply_symbol_ctx(&call.name.name, cat, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
             }
-            // ControlFlow 已移除，All/OneOf 通过 Condition::Combinator 处理
-            Statement::ConditionExec {
-                condition,
-                executors,
-            } => {
-                self.check_condition_ctx(condition, tracker)?;
-                let mut branch = tracker.clone();
-                for item in executors {
-                    self.check_exec_item_ctx(item, &mut branch)?;
-                }
-            }
-            Statement::LetDestructure { value, .. } => {
-                self.check_data_expr_ctx(value, tracker)?;
-            }
-            Statement::Spawn { items } => {
-                // Spawn 后台派生，内部 context 变更不传播回父流
-                let mut branch = tracker.clone();
-                for item in items {
-                    self.check_exec_item_ctx(item, &mut branch)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn check_exec_item_ctx(
-        &self,
-        item: &ExecutorItem,
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
-        match item {
-            ExecutorItem::Executor(call) => {
-                self.apply_symbol_ctx(&call.executor.name, SymbolCategory::Executor, tracker)?;
-                for value in call.args.values() {
-                    self.check_expr_ctx(value, tracker)?;
-                }
-            }
-            ExecutorItem::LetAssign { value, .. } => {
-                self.check_expr_ctx(value, tracker)?;
-            }
-            ExecutorItem::LetDestructure { value, .. } => {
-                self.check_expr_ctx(value, tracker)?;
-            }
-            ExecutorItem::CondExec {
-                condition,
-                executors,
-            } => {
+            BlockItem::CondExec { condition, body } => {
                 self.check_condition_ctx(condition, tracker)?;
                 // 条件化分支内的 context 变更不传播到外层（独立分支语义）
                 let mut branch = tracker.clone();
-                for exec in executors {
-                    self.check_exec_item_ctx(exec, &mut branch)?;
+                for item in body {
+                    self.check_block_item_ctx(item, &mut branch)?;
+                }
+            }
+            BlockItem::Spawn { items } => {
+                // Spawn 后台派生，内部 context 变更不传播回父流
+                let mut branch = tracker.clone();
+                for item in items {
+                    self.check_block_item_ctx(item, &mut branch)?;
                 }
             }
         }
@@ -718,7 +625,7 @@ impl Checker {
             }
             Condition::Seq { items } => {
                 for item in items {
-                    self.check_exec_item_ctx(item, tracker)?;
+                    self.check_block_item_ctx(item, tracker)?;
                 }
             }
             Condition::LetBound { inner, .. } => {
