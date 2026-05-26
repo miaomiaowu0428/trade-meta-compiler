@@ -245,6 +245,7 @@ impl Checker {
                 VarType::Percent => TypeSpec::Percent,
                 VarType::Count => TypeSpec::Count,
                 VarType::Number => TypeSpec::Number,
+                VarType::Bool => TypeSpec::Bool,
                 VarType::Address => TypeSpec::Address,
             };
             self.var_types.insert(var.name.clone(), ty);

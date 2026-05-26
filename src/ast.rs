@@ -128,6 +128,7 @@ pub enum VarType {
     Percent,
     Count,
     Number,
+    Bool,
     /// 链上地址（内部表示为字符串）
     Address,
 }

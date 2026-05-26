@@ -133,6 +133,7 @@ VarType: VarType = {
     "Percent"   => VarType::Percent,
     "Count"     => VarType::Count,
     "Number"    => VarType::Number,
+    "Bool"      => VarType::Bool,
     "Address"   => VarType::Address,
 };
 
