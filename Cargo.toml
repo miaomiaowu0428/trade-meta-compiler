@@ -7,5 +7,6 @@ edition = "2024"
 lalrpop = { version = "0.23.1", features = ["lexer"] }
 
 [dependencies]
+ahash = "0.8"
 lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
 inventory = "0.3"

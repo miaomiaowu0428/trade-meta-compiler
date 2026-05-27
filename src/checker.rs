@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::error::{CheckError, CheckResult};
 use crate::symbol_table::{ContextOp, SymbolCategory, SymbolRegistry};
 use crate::types::{TypeChecker, TypeSpec};
-use std::collections::HashMap;
+use ahash::AHashMap as HashMap;
 
 /// 检查器
 pub struct Checker {

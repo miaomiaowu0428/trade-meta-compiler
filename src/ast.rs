@@ -1,6 +1,6 @@
 //! 通用 AST 定义（领域无关）
 
-use std::collections::HashMap;
+use ahash::AHashMap as HashMap;
 
 /// 符号引用
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

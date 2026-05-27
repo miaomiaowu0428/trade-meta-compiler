@@ -211,13 +211,13 @@ impl fmt::Display for SymbolCategory {
 /// 将多个符号表整合到一个统一的查找接口
 #[derive(Clone)]
 pub struct SymbolRegistry {
-    symbols: std::collections::HashMap<(String, SymbolCategory), SymbolMetadata>,
+    symbols: ahash::AHashMap<(String, SymbolCategory), SymbolMetadata>,
 }
 
 impl SymbolRegistry {
     pub fn new() -> Self {
         Self {
-            symbols: std::collections::HashMap::new(),
+            symbols: ahash::AHashMap::new(),
         }
     }
 
