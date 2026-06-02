@@ -21,6 +21,7 @@ use crate::types::TypeSpec;
 /// | 符号      | 类别      | 说明                                                 |
 /// |-----------|-----------|------------------------------------------------------|
 /// | `Done`  | Executor  | 终止当前 sell 序列，触发 Done 信号                   |
+/// | `Finish`| Executor  | 终止整个 trade task（跨 Spawn），触发 finally 清理    |
 /// | `Spawn` | Executor  | 后台派生任务；pipeline 将 `Spawn[...]` 括号内的序列  |
 /// |         |           | 组装为 `RuntimeValue::Task` 作为 `task` 参数传入     |
 /// | `All`   | Condition | 条件组合子：并发评估全部为 true 才通过               |
@@ -55,6 +56,13 @@ fn builtin_symbols() -> Vec<SymbolMetadata> {
                 allowed_types: vec![TypeSpec::Any],
                 required: false,
             }],
+            contexts: vec![],
+        },
+        SymbolMetadata {
+            name: "Finish",
+            returns: None,
+            category: SymbolCategory::Executor,
+            params: vec![],
             contexts: vec![],
         },
         // ── 条件组合子 ───────────────────────────────────────────────────────
