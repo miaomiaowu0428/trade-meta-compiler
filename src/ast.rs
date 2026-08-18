@@ -156,10 +156,7 @@ pub enum BlockItem {
     Executor { call: CallExpr },
 
     /// 条件执行：`condition => [items]`
-    CondExec {
-        condition: Condition,
-        body: Vec<BlockItem>,
-    },
+    CondExec { condition: Condition, body: Vec<BlockItem> },
 
     /// 后台派生：`Spawn[item1, item2, ...]`
     ///
@@ -171,19 +168,12 @@ pub enum BlockItem {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Condition {
     /// 比较运算
-    Compare {
-        left: DataExpr,
-        op: CompareOp,
-        right: DataExpr,
-    },
+    Compare { left: DataExpr, op: CompareOp, right: DataExpr },
     /// 函数调用形式的条件（V6.0）：Timeout(duration: 15s)
     Call(CallExpr),
     /// 条件组合子：All[c1, c2, ...] / OneOf[c1, c2, ...] / 自定义组合子
     /// name 为注册的条件符号名，conditions 为子条件列表
-    Combinator {
-        name: String,
-        conditions: Vec<Condition>,
-    },
+    Combinator { name: String, conditions: Vec<Condition> },
     /// 序列条件：Do[item1, item2, ...] — 顺序执行完成后返回 true
     Seq { items: Vec<BlockItem> },
     /// Let 绑定条件：`let x = Cond(...)` 或 `let (a, b) = Cond(...)`

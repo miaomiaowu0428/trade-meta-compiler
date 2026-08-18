@@ -17,9 +17,7 @@ inventory::collect!(UnitDef);
 impl UnitDef {
     /// 查询 inventory 中是否存在指定名称的 UnitDef
     pub fn lookup(name: &str) -> Option<&'static UnitDef> {
-        inventory::iter::<UnitDef>
-            .into_iter()
-            .find(|u| u.name == name)
+        inventory::iter::<UnitDef>.into_iter().find(|u| u.name == name)
     }
 }
 

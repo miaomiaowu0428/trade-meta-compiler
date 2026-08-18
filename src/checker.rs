@@ -60,11 +60,7 @@ impl Checker {
     }
 
     /// 检查解构赋值：验证 RHS 表达式类型是否为元组，以及目标变量类型匹配
-    fn check_destructure_targets(
-        &self,
-        targets: &[Option<String>],
-        value: &DataExpr,
-    ) -> CheckResult<()> {
+    fn check_destructure_targets(&self, targets: &[Option<String>], value: &DataExpr) -> CheckResult<()> {
         let value_type = self.infer_expr_type(value)?;
 
         match &value_type {
@@ -78,11 +74,10 @@ impl Checker {
                 }
                 for (target, expected_type) in targets.iter().zip(tuple_types.iter()) {
                     if let Some(var_name) = target {
-                        let var_type = self.var_types.get(var_name).ok_or_else(|| {
-                            CheckError::UndeclaredVariable {
-                                name: var_name.clone(),
-                            }
-                        })?;
+                        let var_type = self
+                            .var_types
+                            .get(var_name)
+                            .ok_or_else(|| CheckError::UndeclaredVariable { name: var_name.clone() })?;
                         if !TypeChecker::is_compatible(var_type, expected_type) {
                             return Err(CheckError::VariableTypeMismatch {
                                 name: var_name.clone(),
@@ -98,9 +93,7 @@ impl Checker {
                 for target in targets {
                     if let Some(var_name) = target {
                         if !self.var_types.contains_key(var_name) {
-                            return Err(CheckError::UndeclaredVariable {
-                                name: var_name.clone(),
-                            });
+                            return Err(CheckError::UndeclaredVariable { name: var_name.clone() });
                         }
                     }
                 }
@@ -115,11 +108,10 @@ impl Checker {
                     )));
                 }
                 if let Some(Some(var_name)) = targets.first() {
-                    let var_type = self.var_types.get(var_name).ok_or_else(|| {
-                        CheckError::UndeclaredVariable {
-                            name: var_name.clone(),
-                        }
-                    })?;
+                    let var_type = self
+                        .var_types
+                        .get(var_name)
+                        .ok_or_else(|| CheckError::UndeclaredVariable { name: var_name.clone() })?;
                     if !TypeChecker::is_compatible(var_type, scalar_type) {
                         return Err(CheckError::VariableTypeMismatch {
                             name: var_name.clone(),
@@ -164,12 +156,9 @@ impl Checker {
     }
 
     fn check_let_assign(&self, var_name: &str, value: &DataExpr) -> CheckResult<()> {
-        let var_type =
-            self.var_types
-                .get(var_name)
-                .ok_or_else(|| CheckError::UndeclaredVariable {
-                    name: var_name.to_string(),
-                })?;
+        let var_type = self.var_types.get(var_name).ok_or_else(|| CheckError::UndeclaredVariable {
+            name: var_name.to_string(),
+        })?;
         let value_type = self.infer_expr_type(value)?;
         if !TypeChecker::is_compatible(var_type, &value_type) {
             return Err(CheckError::VariableTypeMismatch {
@@ -183,17 +172,9 @@ impl Checker {
 
     /// 检查块内可执行调用：先尝试 Executor，再 fallback 到 DataItem。
     fn check_executable_call(&self, call: &CallExpr) -> CheckResult<()> {
-        if self
-            .registry
-            .lookup(&call.name.name, SymbolCategory::Executor)
-            .is_some()
-        {
+        if self.registry.lookup(&call.name.name, SymbolCategory::Executor).is_some() {
             self.check_call_expr(call, SymbolCategory::Executor)
-        } else if self
-            .registry
-            .lookup(&call.name.name, SymbolCategory::DataItem)
-            .is_some()
-        {
+        } else if self.registry.lookup(&call.name.name, SymbolCategory::DataItem).is_some() {
             self.check_call_expr(call, SymbolCategory::DataItem)
         } else {
             Err(CheckError::UndefinedSymbol {
@@ -204,11 +185,7 @@ impl Checker {
     }
 
     /// 检查函数调用表达式（V6.0 新增）
-    fn check_call_expr(
-        &self,
-        call: &CallExpr,
-        expected_category: SymbolCategory,
-    ) -> CheckResult<()> {
+    fn check_call_expr(&self, call: &CallExpr, expected_category: SymbolCategory) -> CheckResult<()> {
         // 检查符号是否存在
         let meta = self
             .registry
@@ -219,11 +196,7 @@ impl Checker {
             })?;
 
         // 检查必需参数
-        let arg_map: HashMap<_, _> = call
-            .args
-            .iter()
-            .map(|arg| (arg.name.as_str(), &arg.value))
-            .collect();
+        let arg_map: HashMap<_, _> = call.args.iter().map(|arg| (arg.name.as_str(), &arg.value)).collect();
 
         for param_spec in &meta.params {
             if param_spec.required && !arg_map.contains_key(param_spec.name) {
@@ -242,10 +215,7 @@ impl Checker {
                     return Err(CheckError::TypeMismatch {
                         expected: param_spec.allowed_types[0].clone(),
                         actual: arg_type,
-                        context: format!(
-                            "{} {} parameter {}",
-                            expected_category, call.name.name, arg.name
-                        ),
+                        context: format!("{} {} parameter {}", expected_category, call.name.name, arg.name),
                     });
                 }
             }
@@ -306,11 +276,7 @@ impl Checker {
             }
             Condition::Combinator { name, conditions } => {
                 // 验证组合子符号已注册
-                if self
-                    .registry
-                    .lookup(name, SymbolCategory::Condition)
-                    .is_none()
-                {
+                if self.registry.lookup(name, SymbolCategory::Condition).is_none() {
                     return Err(CheckError::UndefinedSymbol {
                         name: name.clone(),
                         category: SymbolCategory::Condition,
@@ -338,26 +304,27 @@ impl Checker {
                 }
                 // 再查 DataItem 符号注册表（无括号调用的数据符号，如 PumpPrice）
                 if let Some(meta) = self.registry.lookup(name, SymbolCategory::DataItem) {
-                    return meta.returns.clone().ok_or_else(|| {
-                        CheckError::Custom(format!("DataItem '{}' has no return type", name))
-                    });
+                    return meta
+                        .returns
+                        .clone()
+                        .ok_or_else(|| CheckError::Custom(format!("DataItem '{}' has no return type", name)));
                 }
                 Err(CheckError::UndeclaredVariable { name: name.clone() })
             }
             DataExpr::Literal(value) => Ok(self.infer_literal_type(value)),
             DataExpr::Symbol(sym) => {
                 // 查找符号返回类型
-                let meta = self
-                    .registry
-                    .lookup(&sym.name, SymbolCategory::DataItem)
-                    .ok_or_else(|| CheckError::UndefinedSymbol {
-                        name: sym.name.clone(),
-                        category: SymbolCategory::DataItem,
-                    })?;
+                let meta =
+                    self.registry
+                        .lookup(&sym.name, SymbolCategory::DataItem)
+                        .ok_or_else(|| CheckError::UndefinedSymbol {
+                            name: sym.name.clone(),
+                            category: SymbolCategory::DataItem,
+                        })?;
 
-                meta.returns.clone().ok_or_else(|| {
-                    CheckError::Custom(format!("DataItem '{}' has no return type", sym.name))
-                })
+                meta.returns
+                    .clone()
+                    .ok_or_else(|| CheckError::Custom(format!("DataItem '{}' has no return type", sym.name)))
             }
             DataExpr::BinOp { left, op, right } => {
                 let left_ty = self.infer_expr_type(left)?;
@@ -371,12 +338,10 @@ impl Checker {
                     BinOp::Or => crate::types::BinOp::Or,
                 };
 
-                TypeChecker::check_binary_op(&left_ty, bin_op, &right_ty).ok_or_else(|| {
-                    CheckError::InvalidBinaryOp {
-                        left: left_ty,
-                        op: format!("{:?}", op),
-                        right: right_ty,
-                    }
+                TypeChecker::check_binary_op(&left_ty, bin_op, &right_ty).ok_or_else(|| CheckError::InvalidBinaryOp {
+                    left: left_ty,
+                    op: format!("{:?}", op),
+                    right: right_ty,
                 })
             }
             DataExpr::Call(call) => {
@@ -384,22 +349,16 @@ impl Checker {
                 let meta = self
                     .registry
                     .lookup(&call.name.name, SymbolCategory::Executor)
-                    .or_else(|| {
-                        self.registry
-                            .lookup(&call.name.name, SymbolCategory::Condition)
-                    })
-                    .or_else(|| {
-                        self.registry
-                            .lookup(&call.name.name, SymbolCategory::DataItem)
-                    })
+                    .or_else(|| self.registry.lookup(&call.name.name, SymbolCategory::Condition))
+                    .or_else(|| self.registry.lookup(&call.name.name, SymbolCategory::DataItem))
                     .ok_or_else(|| CheckError::UndefinedSymbol {
                         name: call.name.name.clone(),
                         category: SymbolCategory::Executor,
                     })?;
 
-                meta.returns.clone().ok_or_else(|| {
-                    CheckError::Custom(format!("'{}' has no return type", call.name.name))
-                })
+                meta.returns
+                    .clone()
+                    .ok_or_else(|| CheckError::Custom(format!("'{}' has no return type", call.name.name)))
             }
             DataExpr::List(exprs) => {
                 let elem = exprs
@@ -410,10 +369,7 @@ impl Checker {
                 Ok(TypeSpec::List(Box::new(elem)))
             }
             DataExpr::Tuple(exprs) => {
-                let types: Vec<TypeSpec> = exprs
-                    .iter()
-                    .map(|e| self.infer_expr_type(e))
-                    .collect::<Result<_, _>>()?;
+                let types: Vec<TypeSpec> = exprs.iter().map(|e| self.infer_expr_type(e)).collect::<Result<_, _>>()?;
                 Ok(TypeSpec::Tuple(types))
             }
         }
@@ -429,10 +385,7 @@ impl Checker {
             Value::Duration(_) => TypeSpec::Duration,
             Value::Amount(_, _) => TypeSpec::Amount,
             Value::List(items) => {
-                let elem = items
-                    .first()
-                    .map(|v| self.infer_literal_type(v))
-                    .unwrap_or(TypeSpec::Any);
+                let elem = items.first().map(|v| self.infer_literal_type(v)).unwrap_or(TypeSpec::Any);
                 TypeSpec::List(Box::new(elem))
             }
             Value::Map(_) => TypeSpec::Any,
@@ -459,9 +412,7 @@ struct ContextFlowTracker {
 
 impl ContextFlowTracker {
     fn new() -> Self {
-        Self {
-            state: HashMap::new(),
-        }
+        Self { state: HashMap::new() }
     }
 }
 
@@ -471,11 +422,7 @@ impl Checker {
         let mut tracker = ContextFlowTracker::new();
 
         // 1. Monitor 调用（通常 Produce）
-        self.apply_symbol_ctx(
-            &monitor.monitor_call.name.name,
-            SymbolCategory::Monitor,
-            &mut tracker,
-        )?;
+        self.apply_symbol_ctx(&monitor.monitor_call.name.name, SymbolCategory::Monitor, &mut tracker)?;
 
         // 2. Buy 阶段（与 sell 完全一致的 BlockItem 检查）
         for stmt in &monitor.on_trigger.buy {
@@ -495,12 +442,7 @@ impl Checker {
         Ok(())
     }
 
-    fn apply_symbol_ctx(
-        &self,
-        name: &str,
-        category: SymbolCategory,
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
+    fn apply_symbol_ctx(&self, name: &str, category: SymbolCategory, tracker: &mut ContextFlowTracker) -> CheckResult<()> {
         if let Some(meta) = self.registry.lookup(name, category) {
             for ix in &meta.contexts {
                 let proto = ix.protocol;
@@ -512,9 +454,7 @@ impl Checker {
                                 symbol: name.to_string(),
                             });
                         }
-                        tracker
-                            .state
-                            .insert(proto.to_string(), ContextStatus::Available);
+                        tracker.state.insert(proto.to_string(), ContextStatus::Available);
                     }
                     ContextOp::Need => match tracker.state.get(proto) {
                         None => {
@@ -544,22 +484,14 @@ impl Checker {
         Ok(())
     }
 
-    fn check_call_args_ctx(
-        &self,
-        args: &[NamedArg],
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
+    fn check_call_args_ctx(&self, args: &[NamedArg], tracker: &mut ContextFlowTracker) -> CheckResult<()> {
         for arg in args {
             self.check_expr_ctx(&arg.value, tracker)?;
         }
         Ok(())
     }
 
-    fn check_block_item_ctx(
-        &self,
-        item: &BlockItem,
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
+    fn check_block_item_ctx(&self, item: &BlockItem, tracker: &mut ContextFlowTracker) -> CheckResult<()> {
         match item {
             BlockItem::LetAssign { value, .. } => {
                 self.check_expr_ctx(value, tracker)?;
@@ -568,11 +500,7 @@ impl Checker {
                 self.check_data_expr_ctx(value, tracker)?;
             }
             BlockItem::Executor { call } => {
-                let cat = if self
-                    .registry
-                    .lookup(&call.name.name, SymbolCategory::Executor)
-                    .is_some()
-                {
+                let cat = if self.registry.lookup(&call.name.name, SymbolCategory::Executor).is_some() {
                     SymbolCategory::Executor
                 } else {
                     SymbolCategory::DataItem
@@ -599,11 +527,7 @@ impl Checker {
         Ok(())
     }
 
-    fn check_condition_ctx(
-        &self,
-        cond: &Condition,
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
+    fn check_condition_ctx(&self, cond: &Condition, tracker: &mut ContextFlowTracker) -> CheckResult<()> {
         match cond {
             Condition::Compare { left, right, .. } => {
                 self.check_expr_ctx(left, tracker)?;
@@ -613,10 +537,7 @@ impl Checker {
                 self.apply_symbol_ctx(&call.name.name, SymbolCategory::Condition, tracker)?;
                 self.check_call_args_ctx(&call.args, tracker)?;
             }
-            Condition::Combinator {
-                name: _,
-                conditions,
-            } => {
+            Condition::Combinator { name: _, conditions } => {
                 // 各子条件独立分析，不传播回父流
                 for c in conditions {
                     let mut branch = tracker.clone();
@@ -643,9 +564,7 @@ impl Checker {
                     if let Some(meta) = self.registry.lookup(name, SymbolCategory::DataItem) {
                         for ix in &meta.contexts {
                             let proto = ix.protocol;
-                            if matches!(ix.op, ContextOp::Need | ContextOp::Consume)
-                                && tracker.state.get(proto).is_none()
-                            {
+                            if matches!(ix.op, ContextOp::Need | ContextOp::Consume) && tracker.state.get(proto).is_none() {
                                 return Err(CheckError::ContextNotAvailable {
                                     protocol: proto.to_string(),
                                     symbol: name.clone(),
@@ -682,22 +601,10 @@ impl Checker {
     }
 
     /// 检查函数调用表达式的上下文流（Executor / Condition / DataItem）
-    fn check_data_expr_call_ctx(
-        &self,
-        call: &CallExpr,
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
-        let cat = if self
-            .registry
-            .lookup(&call.name.name, SymbolCategory::Executor)
-            .is_some()
-        {
+    fn check_data_expr_call_ctx(&self, call: &CallExpr, tracker: &mut ContextFlowTracker) -> CheckResult<()> {
+        let cat = if self.registry.lookup(&call.name.name, SymbolCategory::Executor).is_some() {
             SymbolCategory::Executor
-        } else if self
-            .registry
-            .lookup(&call.name.name, SymbolCategory::Condition)
-            .is_some()
-        {
+        } else if self.registry.lookup(&call.name.name, SymbolCategory::Condition).is_some() {
             SymbolCategory::Condition
         } else {
             SymbolCategory::DataItem
@@ -708,11 +615,7 @@ impl Checker {
     }
 
     /// 检查 DataExpr 的上下文流（统一入口，处理 Call / Tuple / 其他表达式）
-    fn check_data_expr_ctx(
-        &self,
-        expr: &DataExpr,
-        tracker: &mut ContextFlowTracker,
-    ) -> CheckResult<()> {
+    fn check_data_expr_ctx(&self, expr: &DataExpr, tracker: &mut ContextFlowTracker) -> CheckResult<()> {
         self.check_expr_ctx(expr, tracker)
     }
 }

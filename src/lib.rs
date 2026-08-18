@@ -37,7 +37,7 @@ pub use error::{CheckError, CheckResult};
 pub use inventory;
 pub use runtime_value::{RuntimeValue, TaskValue};
 pub use symbol_table::{
-    ContextInteraction, ContextOp, ParamSpec, SymbolCategory, SymbolFactory, SymbolMetadata,
-    SymbolRegistry, TypeAliasDef, TypeAliasFactory, UnitDef,
+    ContextInteraction, ContextOp, ParamSpec, SymbolCategory, SymbolFactory, SymbolMetadata, SymbolRegistry, TypeAliasDef,
+    TypeAliasFactory, UnitDef,
 };
 pub use types::{TypeChecker, TypeSpec};

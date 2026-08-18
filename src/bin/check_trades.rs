@@ -10,11 +10,7 @@ use trade_meta_compiler::{Checker, StrategyParser, builtin_symbol_registry};
 
 fn main() {
     let dirs: Vec<String> = std::env::args().skip(1).collect();
-    let dirs = if dirs.is_empty() {
-        vec![".".to_string()]
-    } else {
-        dirs
-    };
+    let dirs = if dirs.is_empty() { vec![".".to_string()] } else { dirs };
 
     let parser = StrategyParser::new();
     let registry = builtin_symbol_registry();
@@ -71,12 +67,7 @@ fn main() {
         }
     }
 
-    println!(
-        "\n共 {} 个文件，{} 个通过，{} 个失败",
-        total,
-        total - failed,
-        failed
-    );
+    println!("\n共 {} 个文件，{} 个通过，{} 个失败", total, total - failed, failed);
 
     if failed > 0 {
         process::exit(1);

@@ -10,10 +10,7 @@ pub type CheckResult<T> = Result<T, CheckError>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum CheckError {
     /// 未定义的符号
-    UndefinedSymbol {
-        name: String,
-        category: SymbolCategory,
-    },
+    UndefinedSymbol { name: String, category: SymbolCategory },
     /// 类型不匹配
     TypeMismatch {
         expected: TypeSpec,
@@ -25,11 +22,7 @@ pub enum CheckError {
     /// 未知参数
     UnknownParam { executor: String, param: String },
     /// 二元运算类型错误
-    InvalidBinaryOp {
-        left: TypeSpec,
-        op: String,
-        right: TypeSpec,
-    },
+    InvalidBinaryOp { left: TypeSpec, op: String, right: TypeSpec },
     /// 比较运算类型错误
     InvalidCompare { left: TypeSpec, right: TypeSpec },
     /// 未声明的变量
@@ -41,11 +34,7 @@ pub enum CheckError {
         actual: TypeSpec,
     },
     /// 隐式上下文未就绪
-    ContextNotAvailable {
-        protocol: String,
-        symbol: String,
-        op: String,
-    },
+    ContextNotAvailable { protocol: String, symbol: String, op: String },
     /// 隐式上下文已被消费
     ContextAlreadyConsumed { protocol: String, symbol: String },
     /// 隐式上下文重复产出
@@ -65,25 +54,13 @@ impl fmt::Display for CheckError {
                 actual,
                 context,
             } => {
-                write!(
-                    f,
-                    "Type mismatch in {}: expected {}, found {}",
-                    context, expected, actual
-                )
+                write!(f, "Type mismatch in {}: expected {}, found {}", context, expected, actual)
             }
             Self::MissingRequiredParam { executor, param } => {
-                write!(
-                    f,
-                    "Missing required parameter '{}' for executor '{}'",
-                    param, executor
-                )
+                write!(f, "Missing required parameter '{}' for executor '{}'", param, executor)
             }
             Self::UnknownParam { executor, param } => {
-                write!(
-                    f,
-                    "Unknown parameter '{}' for executor '{}'",
-                    param, executor
-                )
+                write!(f, "Unknown parameter '{}' for executor '{}'", param, executor)
             }
             Self::InvalidBinaryOp { left, op, right } => {
                 write!(f, "Invalid binary operation: {} {} {}", left, op, right)
@@ -94,22 +71,14 @@ impl fmt::Display for CheckError {
             Self::UndeclaredVariable { name } => {
                 write!(f, "Undeclared variable: '{}'", name)
             }
-            Self::VariableTypeMismatch {
-                name,
-                expected,
-                actual,
-            } => {
+            Self::VariableTypeMismatch { name, expected, actual } => {
                 write!(
                     f,
                     "Variable '{}' type mismatch: expected {}, found {}",
                     name, expected, actual
                 )
             }
-            Self::ContextNotAvailable {
-                protocol,
-                symbol,
-                op,
-            } => {
+            Self::ContextNotAvailable { protocol, symbol, op } => {
                 write!(
                     f,
                     "Implicit context '{}' not available when '{}' tries to {} it",

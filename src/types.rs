@@ -106,11 +106,7 @@ impl TypeChecker {
         match op {
             Add | Sub => {
                 // 同类型相加减
-                if left == right {
-                    Some(left.clone())
-                } else {
-                    None
-                }
+                if left == right { Some(left.clone()) } else { None }
             }
             Mul | Div => {
                 // 类型 * Number = 类型
@@ -147,10 +143,7 @@ impl TypeChecker {
                 TypeSpec::Price | TypeSpec::Amount | TypeSpec::Percent | TypeSpec::Count
             )
         } else if matches!(right, TypeSpec::Number) {
-            matches!(
-                left,
-                TypeSpec::Price | TypeSpec::Amount | TypeSpec::Percent | TypeSpec::Count
-            )
+            matches!(left, TypeSpec::Price | TypeSpec::Amount | TypeSpec::Percent | TypeSpec::Count)
         } else {
             false
         }
@@ -174,19 +167,10 @@ mod tests {
 
     #[test]
     fn test_type_compatibility() {
-        assert!(TypeChecker::is_compatible(
-            &TypeSpec::Price,
-            &TypeSpec::Price
-        ));
+        assert!(TypeChecker::is_compatible(&TypeSpec::Price, &TypeSpec::Price));
         assert!(TypeChecker::is_compatible(&TypeSpec::Any, &TypeSpec::Price));
-        assert!(TypeChecker::is_compatible(
-            &TypeSpec::Price,
-            &TypeSpec::Number
-        ));
-        assert!(!TypeChecker::is_compatible(
-            &TypeSpec::Price,
-            &TypeSpec::Duration
-        ));
+        assert!(TypeChecker::is_compatible(&TypeSpec::Price, &TypeSpec::Number));
+        assert!(!TypeChecker::is_compatible(&TypeSpec::Price, &TypeSpec::Duration));
     }
 
     #[test]
@@ -212,17 +196,8 @@ mod tests {
 
     #[test]
     fn test_compare_op() {
-        assert!(TypeChecker::check_compare_op(
-            &TypeSpec::Price,
-            &TypeSpec::Price
-        ));
-        assert!(TypeChecker::check_compare_op(
-            &TypeSpec::Price,
-            &TypeSpec::Number
-        ));
-        assert!(!TypeChecker::check_compare_op(
-            &TypeSpec::Price,
-            &TypeSpec::Duration
-        ));
+        assert!(TypeChecker::check_compare_op(&TypeSpec::Price, &TypeSpec::Price));
+        assert!(TypeChecker::check_compare_op(&TypeSpec::Price, &TypeSpec::Number));
+        assert!(!TypeChecker::check_compare_op(&TypeSpec::Price, &TypeSpec::Duration));
     }
 }
